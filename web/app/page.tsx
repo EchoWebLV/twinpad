@@ -26,7 +26,7 @@ export default function Home() {
     <main>
       <header>
         <div>
-          <h1>Duo Aura Pad</h1>
+          <h1>Twinpad</h1>
           <div className="sub">One coin, two chains. pump.fun on Solana and Pons on Robinhood Chain, held within a band by a market maker.</div>
         </div>
         <a className="btn" href="/launch">Launch a coin</a>

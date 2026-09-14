@@ -117,7 +117,7 @@ export default function Page() {
         <a href="/" className="back">← all coins</a>
         {s?.meta?.image ? <img src={s.meta.image} alt="" /> : <div style={{ width: 56, height: 56 }} />}
         <div>
-          <h1>{s?.meta ? `${s.meta.name} · $${s.meta.symbol}` : "Duo Aura Pad"}</h1>
+          <h1>{s?.meta ? `${s.meta.name} · $${s.meta.symbol}` : "Twinpad"}</h1>
           <div className="sub">{s?.meta?.description ?? "One coin, two chains. pump.fun on Solana and Pons on Robinhood Chain, held within a band by a market maker."}</div>
         </div>
         <span className={`status ${live ? "live" : ""}`}>{s?.status ?? (err ? "offline" : "…")}</span>

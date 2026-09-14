@@ -1,4 +1,4 @@
-# DUO AURA PAD
+# Twinpad
 
 A custodial two-chain launchpad. One form, one deposit, and the pad launches your token
 on **pump.fun (Solana)** and **Pons v2 (Robinhood Chain, id 4663)** at the same opening price,
