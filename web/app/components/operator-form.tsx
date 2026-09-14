@@ -6,6 +6,11 @@ import { Nav } from "./ui";
 
 const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 
+interface BuyerRow { sol: string; evm: string; buySol: string; buyEth: string }
+const rowFilled = (r: BuyerRow) => !!(r.sol.trim() || r.evm.trim() || r.buySol.trim() || r.buyEth.trim());
+/** The server takes buyers as lines: `<solana key or -> <robinhood key or -> <buy SOL> <buy ETH>`; blank rows are left out. */
+const rowsToLines = (rows: BuyerRow[]) => rows.filter(rowFilled).map((r) => `${r.sol.trim() || "-"} ${r.evm.trim() || "-"} ${r.buySol.trim() || "0"} ${r.buyEth.trim() || "0"}`).join("\n");
+
 /**
  * Hidden operator form, two modes. Pool: the pool funds generated lock wallets and the peg's opening bundle.
  * Bundle: the operator pastes the dev wallet (locked allocation) and buyer wallets; each pays its own buys, the pool
@@ -17,7 +22,8 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
   const [f, setF] = useState({ name: "", symbol: "", description: "", twitter: "", telegram: "" });
   const [image, setImage] = useState("");
   const [p, setP] = useState({ lockPct: "15", bundleSol: "", ponsEth: "", cashSol: "", cashEth: "", maxLossUsd: "500" });
-  const [w, setW] = useState({ devSol: "", devEvm: "", buyers: "" });
+  const [w, setW] = useState({ devSol: "", devEvm: "" });
+  const [rows, setRows] = useState<BuyerRow[]>([{ sol: "", evm: "", buySol: "", buyEth: "" }]);
   const [reveal, setReveal] = useState(false);
   const [q, setQ] = useState<BundleCheckResp | null>(null);
   const [seeded, setSeeded] = useState(false);
@@ -31,7 +37,8 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
     try { localStorage.setItem("adminToken", t); } catch { /* private mode */ }
   };
   const num = (s: string) => (Number.isFinite(Number(s)) && s !== "" ? Number(s) : 0);
-  const walletsBody = () => (bundle && (w.devSol.trim() || w.devEvm.trim() || w.buyers.trim()) ? { dev: { sol: w.devSol.trim(), evm: w.devEvm.trim() }, buyers: w.buyers } : null);
+  const buyerLines = rowsToLines(rows);
+  const walletsBody = () => (bundle && (w.devSol.trim() || w.devEvm.trim() || buyerLines) ? { dev: { sol: w.devSol.trim(), evm: w.devEvm.trim() }, buyers: buyerLines } : null);
   // Quote on every change (debounced). The first quote seeds the dollar defaults: $2k on pump.fun, parity on Pons, $300 cash a side.
   // Bundle mode posts the pasted keys to the check route, which answers with each wallet's balance against its need.
   useEffect(() => {
@@ -58,7 +65,7 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
     }, 400);
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, p.lockPct, p.bundleSol, p.ponsEth, p.cashSol, p.cashEth, seeded, bundle, w.devSol, w.devEvm, w.buyers]);
+  }, [token, p.lockPct, p.bundleSol, p.ponsEth, p.cashSol, p.cashEth, seeded, bundle, w.devSol, w.devEvm, buyerLines]);
   // Once the bundle is known, prefill the Pons side with parity (the ETH that lands Pons on the pump.fun fdv).
   useEffect(() => {
     if (q && seeded && p.bundleSol && !p.ponsEth && q.shape.pons.parityEth > 0) setP((prev) => ({ ...prev, ponsEth: q.shape.pons.parityEth.toString() }));
@@ -66,7 +73,19 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") : e.target.value });
   const setNum = (k: keyof typeof p) => (e: React.ChangeEvent<HTMLInputElement>) => setP({ ...p, [k]: e.target.value });
-  const setW1 = (k: keyof typeof w) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setW({ ...w, [k]: e.target.value });
+  const setW1 = (k: keyof typeof w) => (e: React.ChangeEvent<HTMLInputElement>) => setW({ ...w, [k]: e.target.value });
+  const setRow = (i: number, k: keyof BuyerRow) => (e: React.ChangeEvent<HTMLInputElement>) => setRows(rows.map((r, n) => (n === i ? { ...r, [k]: e.target.value } : r)));
+  const addRow = () => setRows([...rows, { sol: "", evm: "", buySol: "", buyEth: "" }]);
+  const removeRow = (i: number) => setRows(rows.length === 1 ? [{ sol: "", evm: "", buySol: "", buyEth: "" }] : rows.filter((_, n) => n !== i));
+  // the check answers one row per filled buyer, in order: map each visible row to its check
+  const checkOf = (i: number) => {
+    if (!q?.wallets || !rowFilled(rows[i])) return null;
+    const n = rows.slice(0, i).filter(rowFilled).length;
+    return q.wallets.rows[n + 1] ?? null;
+  };
+  const devCheck = q?.wallets?.rows[0] ?? null;
+  const holds = (c: { balance: number; need: number; ok: boolean } | null | undefined, unit: string) =>
+    c ? <small className={c.ok ? "y" : "red"}>holds {c.balance} / needs {c.need} {unit}</small> : <small className="dim">&nbsp;</small>;
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -105,7 +124,6 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
   const s = q?.shape;
   const fxs = s ? s.fx : null;
   const inUsd = (n: number, sym: "SOL" | "ETH") => (fxs ? ` ≈ ${usd(n * fxs[sym])}` : "");
-  const mask = reveal ? {} : ({ WebkitTextSecurity: "disc" } as React.CSSProperties);
   return (
     <div className="shell">
       <Nav />
@@ -145,33 +163,50 @@ export function OperatorForm({ bundle = false }: { bundle?: boolean }) {
           {bundle && (
             <>
               <div className="fcap">02 · Your wallets <a href="#" className="dim" style={{ marginLeft: 8, fontWeight: 400 }} onClick={(e) => { e.preventDefault(); setReveal(!reveal); }}>{reveal ? "hide keys" : "show keys"}</a></div>
-              <div className="grid2">
-                <label>Dev wallet · Solana secret key<input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="base58 secret key" value={w.devSol} onChange={setW1("devSol")} /><small className="dim">Buys {p.lockPct || 0}% of supply in the create bundle{s ? `: ${s.lock.solGross} SOL, hold ≥ ${s.lock.fundSol}` : ""}.</small></label>
-                <label>Dev wallet · Robinhood private key<input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="0x…" value={w.devEvm} onChange={setW1("devEvm")} /><small className="dim">Buys the same share right after the Pons launch{s ? `: ${s.lock.ethGross} ETH, hold ≥ ${s.lock.fundEth}` : ""}.</small></label>
-              </div>
-              <label>
-                Buyer wallets · one a line
-                <textarea rows={5} autoComplete="off" spellCheck={false} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, ...mask }} placeholder={"<solana secret key or -> <robinhood private key or -> <buy SOL> <buy ETH>\n5Kb8…  0xab…  0.5  0.01\n3Fq2…  -      0.25 0"} value={w.buyers} onChange={setW1("buyers")} />
-                <small className="dim">Space or comma separated. <code>-</code> for a chain the wallet skips. The first two ride in the pump.fun create bundle after the maker; the rest buy right after it lands. Pons buys follow the maker's, in order. Each wallet must hold its buy plus fees{q?.limits?.maxBuyers ? ` (max ${q.limits.maxBuyers} wallets)` : ""}.</small>
-              </label>
-              {q?.wallets && (
-                <div className="box" style={{ padding: "6px 16px 10px", marginBottom: 14 }}>
-                  <table className="tbl">
-                    <thead><tr><th>wallet</th><th>Solana</th><th>holds / needs</th><th>Robinhood</th><th>holds / needs</th></tr></thead>
-                    <tbody>
-                      {q.wallets.rows.map((r) => (
-                        <tr key={r.label}>
-                          <td>{r.label}</td>
-                          <td className="mono">{r.sol ? short(r.sol.address) : "—"}</td>
-                          <td className={r.sol && !r.sol.ok ? "red" : ""}>{r.sol ? `${r.sol.balance} / ${r.sol.need} SOL` : "—"}</td>
-                          <td className="mono">{r.evm ? short(r.evm.address) : "—"}</td>
-                          <td className={r.evm && !r.evm.ok ? "red" : ""}>{r.evm ? `${r.evm.balance} / ${r.evm.need} ETH` : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="bw">
+                <div className="bw-head"><span>Solana · pump.fun</span><span>Robinhood · Pons</span><span /></div>
+                <div className="bw-row dev">
+                  <div className="bw-tag">Dev wallet · locks {p.lockPct || 0}%</div>
+                  <div className="bw-cell" data-side="Solana · pump.fun">
+                    <input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="Solana secret key (base58)" value={w.devSol} onChange={setW1("devSol")} />
+                    <small className="dim">buys {s ? `${s.lock.solGross} SOL` : "…"} in the create bundle</small>
+                    {holds(devCheck?.sol, "SOL")}
+                  </div>
+                  <div className="bw-cell" data-side="Robinhood · Pons">
+                    <input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="Robinhood private key (0x…)" value={w.devEvm} onChange={setW1("devEvm")} />
+                    <small className="dim">buys {s ? `${s.lock.ethGross} ETH` : "…"} right after the Pons launch</small>
+                    {holds(devCheck?.evm, "ETH")}
+                  </div>
+                  <span />
                 </div>
-              )}
+                {rows.map((r, i) => {
+                  const c = checkOf(i);
+                  return (
+                    <div className="bw-row" key={i}>
+                      <div className="bw-tag">Buyer {i + 1}</div>
+                      <div className="bw-cell" data-side="Solana · pump.fun">
+                        <div className="bw-pair">
+                          <input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="Solana secret key · empty = skips pump.fun" value={r.sol} onChange={setRow(i, "sol")} />
+                          <div className="amt"><span>buys</span><input type="number" min={0} step={0.01} inputMode="decimal" placeholder="0.00 SOL" value={r.buySol} onChange={setRow(i, "buySol")} /></div>
+                        </div>
+                        {holds(c?.sol, "SOL")}
+                      </div>
+                      <div className="bw-cell" data-side="Robinhood · Pons">
+                        <div className="bw-pair">
+                          <input type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} placeholder="Robinhood private key · empty = skips Pons" value={r.evm} onChange={setRow(i, "evm")} />
+                          <div className="amt"><span>buys</span><input type="number" min={0} step={0.0001} inputMode="decimal" placeholder="0.0000 ETH" value={r.buyEth} onChange={setRow(i, "buyEth")} /></div>
+                        </div>
+                        {holds(c?.evm, "ETH")}
+                      </div>
+                      <button type="button" className="bw-x" title="Remove wallet" onClick={() => removeRow(i)}>×</button>
+                    </div>
+                  );
+                })}
+                <div className="bw-foot">
+                  <button type="button" className="btn sm" onClick={addRow} disabled={!!q?.limits?.maxBuyers && rows.length >= q.limits.maxBuyers}>+ Add wallet</button>
+                  <small className="dim">Leave a chain empty for a wallet that skips it. The first two buyers ride in the pump.fun create bundle after the maker, the rest buy right after it lands; Pons buys follow the maker's in order. Each wallet must hold its buy plus fees{q?.limits?.maxBuyers ? ` · max ${q.limits.maxBuyers} wallets` : ""}.</small>
+                </div>
+              </div>
             </>
           )}
           <div className="fcap">{bundle ? "03" : "02"} · Shape</div>

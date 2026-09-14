@@ -380,3 +380,31 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
 @keyframes catglow { 0%, 100% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); } }
 @keyframes catshadow { 0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.9; } 50% { transform: translateX(-50%) scale(0.82); opacity: 0.55; } }
 @media (max-width: 880px) { .cat3d { flex: none; min-height: 280px; margin: 0; } .cat3d .stack { width: 240px; height: 240px; margin: -120px 0 0 -120px; } .cat3d .glow { width: 260px; height: 200px; } }
+/* ---- bundle wallets: one row per wallet, Solana side | Robinhood side | remove ---- */
+.bw { border: 1px solid var(--line); margin-bottom: 22px; }
+.bw-head { display: grid; grid-template-columns: 1fr 1fr 36px; gap: 0 20px; padding: 10px 14px; border-bottom: 1px solid var(--line); font: 500 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--mute); }
+.bw-row { position: relative; display: grid; grid-template-columns: 1fr 1fr 36px; gap: 0 20px; padding: 22px 14px 12px; border-bottom: 1px solid var(--line); }
+.bw-row.dev { background: var(--y-dim); border-bottom: 1px solid var(--y); }
+.bw-tag { position: absolute; top: 6px; left: 14px; font: 500 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--mute); }
+.bw-row.dev .bw-tag { color: var(--y); }
+.bw-cell { min-width: 0; }
+.bw-cell input, .bw-pair input { margin-top: 0; padding: 8px 0; font-size: 13px; }
+.bw-pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 0; }
+.bw-pair .amt { display: grid; grid-template-columns: 48px 110px; align-items: center; gap: 0 10px; font: 500 10px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+.bw-pair input[type="number"] { font-family: var(--mono); font-size: 13px; }
+.bw-cell small { display: block; margin-top: 5px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+.bw-x { align-self: center; width: 28px; height: 28px; border: 1px solid var(--line2); background: transparent; color: var(--mute); font-size: 16px; line-height: 1; cursor: pointer; }
+.bw-x:hover { border-color: var(--red); color: var(--red); }
+.bw-foot { display: flex; align-items: center; gap: 16px; padding: 12px 14px; }
+.bw-foot .btn { flex: none; }
+.bw-foot small { font-size: 11px; letter-spacing: 0; text-transform: none; line-height: 1.5; }
+
+
+@media (max-width: 760px) {
+  .bw-head { display: none; }
+  .bw-row { grid-template-columns: 1fr; gap: 14px 0; padding-right: 44px; }
+  .bw-cell::before { content: attr(data-side); display: block; margin-bottom: 4px; font: 500 9px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+  .bw-pair .amt { grid-template-columns: 48px minmax(0, 1fr); }
+  .bw-x { position: absolute; top: 4px; right: 8px; }
+  .bw-foot { flex-wrap: wrap; }
+}
