@@ -110,7 +110,7 @@ function canTopUp(frontedTotal: number, repaid: number, topups: number, topup: n
 }
 
 // ---- one run ------------------------------------------------------------------------------------------------
-interface Rule { name: string; twoLegged: boolean; ceilUsd: number; seedPons: boolean }
+interface Rule { name: string; twoLegged: boolean; ceilUsd: number; seedPons: boolean; symmetric?: boolean }
 // ceilUsd: cap (at cost) on tokens the peg has BOUGHT per side, on top of the opening position; sells release it first.
 // seedPons: item 4 — open a Pons position with the ETH front even when parity does not call for one.
 const RULES: Rule[] = [
@@ -119,6 +119,8 @@ const RULES: Rule[] = [
   { name: "ceil300+seed", twoLegged: false, ceilUsd: 300, seedPons: true },
   { name: "twoleg+seed", twoLegged: true, ceilUsd: 300, seedPons: true },
   { name: "twoleg", twoLegged: true, ceilUsd: 300, seedPons: false },
+  // proper two-sided book: the same dollars on each chain, half tokens half cash, no top-ups, buys capped by the side's own cash
+  { name: "symmetric", twoLegged: false, ceilUsd: Infinity, seedPons: true, symmetric: true },
 ];
 
 interface Result {
@@ -134,19 +136,23 @@ function run(sc: Scenario, rule: Rule, seed: number): Result {
   const SUPPLY = 1e9;
 
   // launch: dev buy on pump.fun, Pons opening buy sized to the same FDV
-  const m = { sol: CFG.frontSol - 0.04, eth: CFG.frontEth, tokPump: 0, tokPons: 0, escrowEth: 0 };
-  const b = pump.buy(CFG.devBuySol, 50); m.sol -= CFG.devBuySol; m.tokPump += b.tokens;
+  const totalUsd = CFG.frontSol * SOL_USD + CFG.frontEth * ETH_USD;
+  const frontSol = rule.symmetric ? totalUsd / 2 / SOL_USD : CFG.frontSol;
+  const frontEth = rule.symmetric ? totalUsd / 2 / ETH_USD : CFG.frontEth;
+  const devBuySol = rule.symmetric ? (frontSol - 0.13) / 2 : CFG.devBuySol;
+  const m = { sol: frontSol - 0.04, eth: frontEth, tokPump: 0, tokPons: 0, escrowEth: 0 };
+  const b = pump.buy(devBuySol, 50); m.sol -= devBuySol; m.tokPump += b.tokens;
   const targetFdv = pump.fdvUsd(SUPPLY, SOL_USD);
   // solve quote-in on Pons for the same price
   const targetPrice = targetFdv / SUPPLY / ETH_USD;
   const k = pons.q * pons.t; const q1 = Math.sqrt(k * targetPrice); const net = q1 - pons.q;
-  const ethIn = rule.seedPons ? m.eth - CFG.makerCashEth : Math.min(m.eth - CFG.makerCashEth, net / (1 - 0.03));
+  const ethIn = rule.symmetric ? (m.eth - CFG.makerCashEth) / 2 : rule.seedPons ? m.eth - CFG.makerCashEth : Math.min(m.eth - CFG.makerCashEth, net / (1 - 0.03));
   const pb = pons.buy(Math.max(0, ethIn)); m.eth -= Math.max(0, ethIn); m.tokPons += pb.tokens; m.escrowEth += pb.tax;
   const entryPump = pump.price(), entryPons = pons.price();
   const openTokPump = m.tokPump, openTokPons = m.tokPons;
   const bought = { pumpUsd: 0, ponsUsd: 0 }; // peg purchases at cost, released by sells
 
-  let fronted = { sol: CFG.frontSol, eth: CFG.frontEth }, repaid = { sol: 0, eth: 0 }, topups = { sol: 0, eth: 0 };
+  let fronted = { sol: frontSol, eth: frontEth }, repaid = { sol: 0, eth: 0 }, topups = { sol: 0, eth: 0 };
   let trades = 0, gapSum = 0, inBand = 0, halted = false, lowSolTicks = 0, noTokTicks = 0;
 
   // outsiders: a pre-wave of buys gives them inventory to dump later
@@ -202,7 +208,7 @@ function run(sc: Scenario, rule: Rule, seed: number): Result {
           // buy on Pons
           const ceilingOk = bought.ponsUsd + usd <= rule.ceilUsd;
           let eth = usd / ETH_USD;
-          if (ceilingOk && m.eth - eth < CFG.minEth && canTopUp(fronted.eth + topups.eth, repaid.eth, topups.eth, CFG.topupEth, CFG.maxTopupEth)) {
+          if (!rule.symmetric && ceilingOk && m.eth - eth < CFG.minEth && canTopUp(fronted.eth + topups.eth, repaid.eth, topups.eth, CFG.topupEth, CFG.maxTopupEth)) {
             topups.eth += CFG.topupEth; m.eth += CFG.topupEth;
           }
           eth = Math.min(eth, m.eth - CFG.minEth);
@@ -210,7 +216,7 @@ function run(sc: Scenario, rule: Rule, seed: number): Result {
         } else {
           const ceilingOk = bought.pumpUsd + usd <= rule.ceilUsd;
           let sol = usd / SOL_USD;
-          if (ceilingOk && m.sol - sol < CFG.minSol && canTopUp(fronted.sol + topups.sol, repaid.sol, topups.sol, CFG.topupSol, CFG.maxTopupSol)) {
+          if (!rule.symmetric && ceilingOk && m.sol - sol < CFG.minSol && canTopUp(fronted.sol + topups.sol, repaid.sol, topups.sol, CFG.topupSol, CFG.maxTopupSol)) {
             topups.sol += CFG.topupSol; m.sol += CFG.topupSol;
           }
           sol = Math.min(sol, m.sol - CFG.minSol);
@@ -250,7 +256,7 @@ const only = process.argv[2];
 const seeds = Number(process.argv[3] ?? 40);
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const fmt = (n: number, d = 0) => n.toFixed(d).padStart(8);
-console.log(`ticks ${TICKS} (${HOURS}h at ${TICK_S}s), seeds ${seeds}; front ${CFG.frontSol} SOL + ${CFG.frontEth} ETH, dev buy ${CFG.devBuySol} SOL; SOL $${SOL_USD} ETH $${ETH_USD}`);
+console.log(`ticks ${TICKS} (${HOURS}h at ${TICK_S}s), seeds ${seeds}; front ${CFG.frontSol} SOL + ${CFG.frontEth} ETH, dev buy ${CFG.devBuySol} SOL (symmetric: same total $, split evenly per chain, half in tokens); SOL $${SOL_USD} ETH $${ETH_USD}`);
 console.log("");
 for (const sc of SCENARIOS) {
   if (only && sc.name !== only) continue;
