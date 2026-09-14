@@ -1,0 +1,16 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { sizeBuy } from "./maker.js";
+
+test("sizeBuy spends the full clip when the wallet can fund it above the floor", () => {
+  assert.equal(sizeBuy(0.03, 0.05, 0.003, 0.01), 0.03);
+});
+
+test("sizeBuy shrinks a scaled clip to what sits above the floor", () => {
+  assert.equal(Number(sizeBuy(0.03, 0.015, 0.003, 0.01).toFixed(6)), 0.012);
+});
+
+test("sizeBuy returns 0 under a quarter of the base clip", () => {
+  assert.equal(sizeBuy(0.03, 0.005, 0.003, 0.01), 0);
+  assert.equal(sizeBuy(0.03, 0.002, 0.003, 0.01), 0);
+});

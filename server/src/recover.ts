@@ -61,7 +61,8 @@ export class Recovery {
 
     // 2. ETH follows Pons demand: the maker wants to buy there (pump expensive) but cannot fund a clip
     const g = c.gap();
-    const clipEth = cfg.maker.maxClipUsd / c.fx.ETH;
+    // the maker scales its clip up to 3x outside the band, so starvation is judged against the clip it actually wants
+    const clipEth = (cfg.maker.maxClipUsd * (g ? Math.min(3, g.gap / c.band) : 1)) / c.fx.ETH;
     const starved = g !== null && g.gap > c.band && g.expensive === "pump" && inv.evm.eth - clipEth < cfg.maker.minEth;
     if (starved && rec.front.topupEth + cfg.recover.topupEth <= cfg.recover.maxTopupEthPerCoin + 1e-12) {
       const can = await this.ctx.pool.canFront(0, cfg.recover.topupEth);

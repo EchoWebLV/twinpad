@@ -185,13 +185,14 @@ export class Maker {
       else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} < ${tokens.toFixed(0)}`);
     }
     // 2) buy on the cheap side
+    // A scaled clip the wallet cannot fund above its floor shrinks to what it can, never below a quarter of the base clip.
     if (cheap === "pump") {
-      const sol = clipUsd / st.fx.SOL;
-      if (inv.solana.sol - sol >= this.cfg.maker.minSol) await this.run("pump", "buy", `${sol.toFixed(4)} SOL`, reason, () => solanaBuy(this.conn, this.solWallet, mint, sol, o));
+      const sol = sizeBuy(clipUsd / st.fx.SOL, inv.solana.sol, this.cfg.maker.minSol, this.cfg.maker.maxClipUsd / st.fx.SOL);
+      if (sol > 0) await this.run("pump", "buy", `${sol.toFixed(4)} SOL`, reason, () => solanaBuy(this.conn, this.solWallet, mint, sol, o));
       else this.skip("pump", "buy", reason, `SOL floor ${this.cfg.maker.minSol}`);
     } else {
-      const eth = clipUsd / st.fx.ETH;
-      if (inv.evm.eth - eth >= this.cfg.maker.minEth) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
+      const eth = sizeBuy(clipUsd / st.fx.ETH, inv.evm.eth, this.cfg.maker.minEth, this.cfg.maker.maxClipUsd / st.fx.ETH);
+      if (eth > 0) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
       else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
     }
     await this.recover(inv, tradesBefore);
@@ -230,4 +231,13 @@ export class Maker {
       this.onError(`${side} ${action} ${amount}: ${msg}`);
     }
   }
+}
+
+/**
+ * How much quote a buy may spend: the wanted clip, shrunk to what the wallet holds above its floor.
+ * Anything under a quarter of the base clip is not worth the gas and returns 0 (the caller skips).
+ */
+export function sizeBuy(want: number, balance: number, floor: number, baseClip: number): number {
+  const can = Math.min(want, balance - floor);
+  return can >= baseClip / 4 ? can : 0;
 }
