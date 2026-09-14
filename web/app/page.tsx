@@ -130,7 +130,7 @@ export default function Home() {
               <a key={l.id} className="rowc" href={`/launch/${l.id}`}>
                 <Img src={img(l.token.imageCid)} size={44} />
                 <div><div className="name">{l.token.name} <span className="mute">${l.token.symbol}</span></div><div className="sub">{l.wallets.pumpMint.slice(0, 10)}…</div></div>
-                <div className="hide"><span className="lbl">deposit</span><span className="num">{l.payment.receivedSol}/{l.payment.requiredSol} SOL</span></div>
+                <div className="hide"><span className="lbl">deposit</span><span className="num">{l.payment.received}/{l.payment.required} {l.payment.unit}</span></div>
                 <div className="hide"><span className="lbl">opening</span><span className="num">{usd(l.quote.openingFdv)}</span></div>
                 <div><span className="lbl">{ago(l.createdAt)}</span><Status status={l.status} /></div>
                 <div className="out hide" />

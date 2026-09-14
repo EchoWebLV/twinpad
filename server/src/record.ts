@@ -1,12 +1,18 @@
 /** Launch record: the public state of one launch, same shape as TWINE V2's /api/paid entries. */
 export type LaunchStatus =
-  | "awaiting_deposit" | "paid" | "approved" | "launching" | "live" | "rejected" | "expired" | "failed";
+  | "awaiting_deposit" | "paid" | "approved" | "launching" | "live" | "closing" | "closed" | "rejected" | "expired" | "failed";
 
-export interface PaymentTx { tx: string; from: string; sol: number; at: number; late: boolean }
+/** Which chain the deposit is paid on. "sol": SOL to a Solana address. "eth": ETH to an EVM address on Robinhood Chain. */
+export type PaymentChain = "sol" | "eth";
+export const PAYMENT_UNIT: Record<PaymentChain, "SOL" | "ETH"> = { sol: "SOL", eth: "ETH" };
+/** Amounts are in the deposit unit (SOL or ETH), see `payment.chain`. */
+export interface PaymentTx { tx: string; from: string; amount: number; at: number; late: boolean }
 export interface Step { at: number; name: string; [k: string]: unknown }
 
 export interface Quote {
   depositSol: number;
+  /** Same USD value as depositSol at the fx rate in this quote. */
+  depositEth: number;
   frontSol: number;
   frontEth: number;
   devBuySol: number;
@@ -18,6 +24,32 @@ export interface Quote {
   landing: { pump: number; pons: number };
   supplyPct: { pump: number; pons: number };
   fx: { SOL: number; ETH: number };
+}
+
+/** Exit policy state for one live coin: the timer, the verdict, and what the close recovered. */
+export interface Retire {
+  /** When the timer evaluates outside interest (launchedAt + RETIRE_AFTER_MIN). */
+  decideAt: number;
+  policy: { afterMin: number; minBuyers: number; minUsd: number; selldownMin: number };
+  /** Operator said keep: the timer never closes this coin. */
+  keep: boolean;
+  evaluated: { at: number; outsideBuyers: number; outsideUsd: number; verdict: "keep" | "full" | "selldown" } | null;
+  /** Selldown mode: sell clips above entry until this time, then close fully. */
+  selldownUntil: number | null;
+  mode: "full" | "selldown" | null;
+  reason: string | null;
+  startedAt: number | null;
+  closedAt: number | null;
+  sold: { pumpTokens: number; ponsTokens: number; txs: string[] };
+  swept: { sol: number; eth: number; txs: string[] };
+  error: string | null;
+}
+
+export function newRetire(launchedAt: number, policy: Retire["policy"]): Retire {
+  return {
+    decideAt: launchedAt + policy.afterMin * 60_000, policy, keep: false, evaluated: null, selldownUntil: null,
+    mode: null, reason: null, startedAt: null, closedAt: null, sold: { pumpTokens: 0, ponsTokens: 0, txs: [] }, swept: { sol: 0, eth: 0, txs: [] }, error: null,
+  };
 }
 
 export interface TokenMeta {
@@ -33,30 +65,37 @@ export interface LaunchRecord {
   devWallet: string;
   devShareBps: number;
   devShareBpsFunded: number;
-  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string };
+  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
   payment: {
-    address: string; requiredSol: number; receivedSol: number; paidAt: number | null; from: string | null;
-    expectedFrom: string; overpaidSol: number; deadlineAt: number; toPoolTx: string | null; txs: PaymentTx[]; foreign: PaymentTx[];
+    chain: PaymentChain; unit: "SOL" | "ETH";
+    /** Payment address on `chain`. */
+    address: string; required: number; received: number; paidAt: number | null; from: string | null;
+    expectedFrom: string; overpaid: number; deadlineAt: number; toPoolTx: string | null; txs: PaymentTx[]; foreign: PaymentTx[];
+    /** ETH only: tx hashes submitted by the payer, verified by the watcher over RPC. */
+    claimed: string[];
   };
   approval: { status: "pending" | "approved" | "rejected"; at: number | null; note: string | null; auto: boolean };
-  front: { sol: number; eth: number; at: number | null; txSol: string | null; txRhLauncher: string | null; txRhMaker: string | null; repaidSol: number; writtenOffSol: number };
+  front: { sol: number; eth: number; at: number | null; txSol: string | null; txRhLauncher: string | null; txRhMaker: string | null; repaidSol: number; repaidEth: number; writtenOffSol: number };
   seed: { pumpTokens: number; ponsTokens: number; openingFdv: number; at: number } | null;
   launch: {
     startedAt: number | null; steps: Step[]; salt: string | null; pumpMint: string | null; ponsToken: string | null; ponsCurve: string | null;
     launchedAt: number | null; txs: Record<string, string>; error: string | null;
+    /** Automatic retries after a failed launch (LAUNCH_AUTO_RETRIES). */
+    retries: number;
   };
-  refund: { sol: number; paidSol: number; txs: string[] };
+  /** In the deposit unit. */
+  refund: { amount: number; paid: number; txs: string[] };
   reserve: null;
   waterfall: null;
-  retire: null;
+  retire: Retire | null;
   quote: Quote;
 }
 
 /** Secret keys for one launch. Written 0600, never served. */
-export interface LaunchKeys { mint: number[]; solCreator: number[]; payment: number[]; evmLauncher: string; evmMaker: string }
+export interface LaunchKeys { mint: number[]; solCreator: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string }
 
 export interface NewRecordInput {
-  id: string; token: TokenMeta; devWallet: string; wallets: LaunchRecord["wallets"]; quote: Quote; deadlineAt: number; now: number;
+  id: string; token: TokenMeta; devWallet: string; chain: PaymentChain; wallets: LaunchRecord["wallets"]; quote: Quote; deadlineAt: number; now: number;
 }
 
 export function newRecord(i: NewRecordInput): LaunchRecord {
@@ -70,14 +109,16 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     devShareBpsFunded: 5000,
     wallets: i.wallets,
     payment: {
-      address: i.wallets.payment, requiredSol: i.quote.depositSol, receivedSol: 0, paidAt: null, from: null,
-      expectedFrom: i.devWallet, overpaidSol: 0, deadlineAt: i.deadlineAt, toPoolTx: null, txs: [], foreign: [],
+      chain: i.chain, unit: PAYMENT_UNIT[i.chain],
+      address: i.chain === "eth" ? i.wallets.evmPayment : i.wallets.payment,
+      required: i.chain === "eth" ? i.quote.depositEth : i.quote.depositSol, received: 0, paidAt: null, from: null,
+      expectedFrom: i.devWallet, overpaid: 0, deadlineAt: i.deadlineAt, toPoolTx: null, txs: [], foreign: [], claimed: [],
     },
     approval: { status: "pending", at: null, note: null, auto: false },
-    front: { sol: i.quote.frontSol, eth: i.quote.frontEth, at: null, txSol: null, txRhLauncher: null, txRhMaker: null, repaidSol: 0, writtenOffSol: 0 },
+    front: { sol: i.quote.frontSol, eth: i.quote.frontEth, at: null, txSol: null, txRhLauncher: null, txRhMaker: null, repaidSol: 0, repaidEth: 0, writtenOffSol: 0 },
     seed: null,
-    launch: { startedAt: null, steps: [{ at: i.now, name: "created" }], salt: null, pumpMint: null, ponsToken: null, ponsCurve: null, launchedAt: null, txs: {}, error: null },
-    refund: { sol: 0, paidSol: 0, txs: [] },
+    launch: { startedAt: null, steps: [{ at: i.now, name: "created" }], salt: null, pumpMint: null, ponsToken: null, ponsCurve: null, launchedAt: null, txs: {}, error: null, retries: 0 },
+    refund: { amount: 0, paid: 0, txs: [] },
     reserve: null,
     waterfall: null,
     retire: null,
@@ -90,10 +131,12 @@ const ALLOWED: Record<LaunchStatus, LaunchStatus[]> = {
   paid: ["approved", "rejected"],
   approved: ["launching", "rejected"],
   launching: ["live", "failed"],
-  live: [],
+  live: ["closing"],
+  closing: ["closed"],
+  closed: [],
   rejected: [],
   expired: [],
-  failed: ["approved"],
+  failed: ["approved", "closing"],
 };
 
 export function transition(rec: LaunchRecord, to: LaunchStatus, now: number, extra: Record<string, unknown> = {}) {
@@ -109,6 +152,31 @@ export function step(rec: LaunchRecord, name: string, now: number, extra: Record
 /** What the API serves: the record as stored (it holds public keys only). Exists so the boundary is explicit. */
 export function publicRecord(rec: LaunchRecord): LaunchRecord {
   return rec;
+}
+
+/** Records written before ETH deposits existed: SOL-only shape with requiredSol/receivedSol/refund.sol. */
+export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
+  const p = raw.payment as Record<string, unknown>;
+  if (p && !("chain" in p)) {
+    const tx = (t: Record<string, unknown>) => ({ ...t, amount: t.amount ?? t.sol });
+    raw.payment = {
+      chain: "sol", unit: "SOL", address: p.address, required: p.requiredSol, received: p.receivedSol, paidAt: p.paidAt, from: p.from,
+      expectedFrom: p.expectedFrom, overpaid: p.overpaidSol, deadlineAt: p.deadlineAt, toPoolTx: p.toPoolTx,
+      txs: ((p.txs as Record<string, unknown>[]) ?? []).map(tx), foreign: ((p.foreign as Record<string, unknown>[]) ?? []).map(tx), claimed: [],
+    };
+    const r = raw.refund as Record<string, unknown>;
+    raw.refund = { amount: r?.amount ?? r?.sol ?? 0, paid: r?.paid ?? r?.paidSol ?? 0, txs: r?.txs ?? [] };
+    const w = raw.wallets as Record<string, unknown>;
+    w.evmPayment ??= "";
+    const q = raw.quote as Record<string, unknown>;
+    q.depositEth ??= 0;
+  }
+  const f = raw.front as Record<string, unknown> | undefined;
+  if (f) f.repaidEth ??= 0;
+  const l = raw.launch as Record<string, unknown> | undefined;
+  if (l) l.retries ??= 0;
+  raw.retire ??= null;
+  return raw as unknown as LaunchRecord;
 }
 
 export const OPEN_STATUSES: LaunchStatus[] = ["awaiting_deposit", "paid", "approved", "launching", "failed"];

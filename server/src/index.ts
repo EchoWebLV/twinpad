@@ -8,7 +8,7 @@ import { fx } from "./fx.js";
 import { pinFile, pinJson } from "./ipfs.js";
 import { createLaunch } from "./paid.js";
 import { buildQuote } from "./quote.js";
-import { PaymentWatcher, refundDeposit } from "./payments.js";
+import { ETH_TX_HASH, PaymentWatcher, refundDeposit } from "./payments.js";
 import { Scheduler, approve, reject } from "./scheduler.js";
 import { runLaunch } from "./launcher.js";
 import { CoinState } from "./coin.js";
@@ -62,7 +62,9 @@ async function main() {
     if (rec.status === "live") mount(rec);
   };
   for (const rec of registry.list({ status: ["launching"] })) await launch(rec); // resume after a crash
-  new PaymentWatcher(conn, registry).start();
+  const chains = { conn, pub, rpcUrl: config.evm.rpcUrl };
+  const watcher = new PaymentWatcher(chains, registry);
+  watcher.start();
   const scheduler = new Scheduler(registry, { autoApprove: config.launch.autoApprove, maxLiveMakers: config.launch.maxLiveMakers }, launch);
   scheduler.start();
 
@@ -91,9 +93,25 @@ async function main() {
     if (registry.list({ status: OPEN_STATUSES }).length >= config.launch.maxOpenLaunches) throw new HttpError(503, "launches are full right now");
     if (!config.pinataJwt) throw new HttpError(503, "PINATA_JWT not configured");
     return createLaunch({
-      registry, deadlineMin: config.launch.depositDeadlineMin, now: Date.now, quote: quoteNow,
+      registry, deadlineMin: config.launch.depositDeadlineMin, now: Date.now, quote: quoteNow, publicUrl: config.server.publicUrl,
       pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) },
     }, body);
+  });
+  /** ETH deposits: the payer (or the page, right after the wallet sends) submits the tx hash; the watcher verifies it over RPC. */
+  router.post("/api/paid/:id/tx", (p, body) => {
+    const r = rec(p.id);
+    const hash = typeof (body as { hash?: unknown })?.hash === "string" ? (body as { hash: string }).hash.trim() : "";
+    if (r.payment.chain !== "eth") throw new HttpError(409, "this launch is paid in SOL; the watcher finds SOL payments on its own");
+    if (r.status !== "awaiting_deposit") throw new HttpError(409, `status is ${r.status}`);
+    if (!ETH_TX_HASH.test(hash)) throw new HttpError(400, "hash must be a 0x-prefixed 32-byte tx hash");
+    const known = [...r.payment.txs, ...r.payment.foreign].map((t) => t.tx.toLowerCase());
+    if (!known.includes(hash.toLowerCase()) && !r.payment.claimed.some((h) => h.toLowerCase() === hash.toLowerCase())) {
+      if (r.payment.claimed.length >= 20) throw new HttpError(429, "too many pending hashes");
+      r.payment.claimed.push(hash);
+      registry.save(r);
+      void watcher.tick().catch((e) => console.error("[payments]", (e as Error).message));
+    }
+    return publicRecord(r);
   });
   router.get("/api/pool", () => pool.summary(registry));
   router.get("/api/chain/blockhash", async () => ({ blockhash: (await conn.getLatestBlockhash("confirmed")).blockhash }));
@@ -112,7 +130,7 @@ async function main() {
     if (!["awaiting_deposit", "paid", "approved"].includes(r.status)) throw new HttpError(409, `status is ${r.status}`);
     reject(r, Date.now(), note);
     registry.save(r);
-    await refundDeposit(conn, registry, r, Date.now());
+    await refundDeposit(chains, registry, r, Date.now());
     return r;
   }, { admin: true });
   router.post("/api/admin/paid/:id/retry", (p) => {

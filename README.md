@@ -165,8 +165,8 @@ Both `server/` and `web/` have a `Dockerfile` and `railway.json`.
 
 - Server: set the `.env` keys as Railway variables and mount a volume at `/app/data`
   (`DATA_DIR`). That volume holds launch records, **per-coin secret keys**, and price series.
-- Web: set `NEXT_PUBLIC_API_URL` to the server's public URL; set `CORS_ORIGIN` on the
-  server to the web URL.
+- Web: set `NEXT_PUBLIC_API_URL` to the server's public URL; set `CORS_ORIGIN` and
+  `PUBLIC_URL` on the server to the web URL. Every token's website is `<PUBLIC_URL>/coin/<id>`.
 
 ---
 

@@ -236,6 +236,8 @@ html.anim .sh::after { animation: grow 1.1s var(--ease) both; }
 .sticky { position: sticky; top: 24px; }
 .form label { display: block; margin: 0 0 24px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--mute); transition: color 0.2s; }
 .form label:focus-within { color: var(--y); }
+.form label input:disabled { color: var(--mute); border-style: dashed; cursor: default; }
+.form label > small { display: block; margin-top: 6px; letter-spacing: 0; text-transform: none; }
 .form input, .form textarea { display: block; width: 100%; margin-top: 8px; background: transparent; color: var(--ink); border: 0; border-bottom: 1px solid var(--line2); padding: 10px 0; font: 15px/1.4 var(--font); letter-spacing: 0; text-transform: none; transition: border-color 0.2s; border-radius: 0; }
 .form input::placeholder, .form textarea::placeholder { color: var(--dim); }
 .form input:focus, .form textarea:focus { outline: none; border-bottom-color: var(--y); }
@@ -345,3 +347,24 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
   .ph-row { flex-wrap: wrap; }
   .pay-amt { font-size: 42px; }
 }
+
+/* ---- wallet chooser (launch form) + tx hash row (pay page) */
+.wallets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 18px; }
+.wallets .wal { display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 14px 16px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; font-family: var(--mono); transition: border-color 0.2s var(--ease), background 0.2s var(--ease); }
+.wallets .wal b { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 13px; }
+.wallets .wal span { color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.wallets .wal:hover { border-color: var(--ink); }
+.wallets .wal.on { border-color: var(--y); box-shadow: inset 0 0 0 1px var(--y); background: rgba(255, 212, 0, 0.04); }
+.wallets .wal.on b { color: var(--y); }
+.hashrow { display: flex; gap: 10px; margin-top: 14px; align-items: stretch; }
+.hashrow input { flex: 1; min-width: 0; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 8px 0; outline: none; }
+.hashrow input:focus { border-bottom-color: var(--y); }
+@media (max-width: 520px) { .wallets { grid-template-columns: 1fr; } }
+.wallets .wal b { display: flex; align-items: center; gap: 8px; }
+.wallets .wal b img { width: 18px; height: 18px; border-radius: 3px; }
+.wallets .wal b em { font-style: normal; font-family: var(--mono); font-weight: 400; font-size: 10px; color: var(--dim); letter-spacing: 0.08em; margin-left: auto; }
+.chainpick { display: inline-flex; border: 1px solid var(--line); }
+.chainpick button { background: transparent; border: 0; color: var(--mute); font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; padding: 3px 9px; cursor: pointer; }
+.chainpick button + button { border-left: 1px solid var(--line); }
+.chainpick button.on { color: var(--bg); background: var(--y); }
+.form .fcap { margin: 22px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); font: 500 10px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--y); }

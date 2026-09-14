@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { LaunchKeys, LaunchRecord, LaunchStatus } from "./record.js";
+import { migrateRecord, type LaunchKeys, type LaunchRecord, type LaunchStatus } from "./record.js";
 
 /** File-backed registry: DATA_DIR/launches/<id>/{record.json,keys.json,image.png}. Records stay in memory. */
 export class Registry {
@@ -13,7 +13,7 @@ export class Registry {
     fs.mkdirSync(this.root, { recursive: true });
     for (const id of fs.readdirSync(this.root)) {
       const f = path.join(this.root, id, "record.json");
-      if (fs.existsSync(f)) this.records.set(id, JSON.parse(fs.readFileSync(f, "utf8")) as LaunchRecord);
+      if (fs.existsSync(f)) this.records.set(id, migrateRecord(JSON.parse(fs.readFileSync(f, "utf8")) as Record<string, unknown>));
     }
   }
 

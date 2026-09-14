@@ -1,12 +1,15 @@
 import fs from "node:fs";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { getAddress, isAddress } from "viem";
 import type { Registry } from "./registry.js";
-import { newRecord, type LaunchRecord, type Quote } from "./record.js";
+import { newRecord, type LaunchRecord, type PaymentChain, type Quote } from "./record.js";
 
 export interface CreateInput {
-  name: string; symbol: string; description: string; twitter?: string; website?: string; telegram?: string;
+  name: string; symbol: string; description: string; twitter?: string; telegram?: string;
   devWallet: string; imageDataUrl: string;
+  /** "sol" (default): deposit in SOL from a Solana wallet. "eth": deposit in ETH on Robinhood Chain from an EVM wallet. */
+  payChain: PaymentChain;
 }
 
 export interface CreateDeps {
@@ -15,6 +18,8 @@ export interface CreateDeps {
   quote: () => Promise<Quote>;
   deadlineMin: number;
   now: () => number;
+  /** Public web URL; the token website is always `<publicUrl>/coin/<id>` (empty → no website). */
+  publicUrl: string;
 }
 
 const MAX_IMAGE = 2 * 1024 * 1024;
@@ -33,11 +38,17 @@ export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
   const symbol = str("symbol", 10, true).toUpperCase();
   if (!/^[A-Z0-9]+$/.test(symbol)) throw new Error("symbol must be letters and digits");
   const description = str("description", 500, true);
-  const devWallet = str("devWallet", 64, true);
-  try {
-    new PublicKey(devWallet);
-  } catch {
-    throw new Error("devWallet is not a Solana address");
+  const payChain: PaymentChain = i.payChain === "eth" ? "eth" : i.payChain === "sol" || i.payChain == null ? "sol" : (() => { throw new Error("payChain must be sol or eth"); })();
+  let devWallet = str("devWallet", 64, true);
+  if (payChain === "eth") {
+    if (!isAddress(devWallet)) throw new Error("devWallet is not an EVM address");
+    devWallet = getAddress(devWallet);
+  } else {
+    try {
+      new PublicKey(devWallet);
+    } catch {
+      throw new Error("devWallet is not a Solana address");
+    }
   }
   const url = typeof i.imageDataUrl === "string" ? i.imageDataUrl : "";
   const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(url);
@@ -46,8 +57,8 @@ export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
   if (image.length > MAX_IMAGE) throw new Error("image max 2 MB");
   if (!(image.subarray(0, 4).equals(PNG) || image.subarray(0, 3).equals(JPG))) throw new Error("image bytes are not PNG/JPEG");
   return {
-    name, symbol, description, devWallet, imageDataUrl: url, image,
-    twitter: str("twitter", 120), website: str("website", 120), telegram: str("telegram", 120),
+    name, symbol, description, devWallet, payChain, imageDataUrl: url, image,
+    twitter: str("twitter", 120), telegram: str("telegram", 120),
   };
 }
 
@@ -55,6 +66,7 @@ export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
 export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchRecord> {
   const input = validateInput(raw);
   const id = d.registry.newId(input.symbol);
+  const website = d.publicUrl ? `${d.publicUrl}/coin/${id}` : "";
   fs.mkdirSync(d.registry.dir(id), { recursive: true });
   fs.writeFileSync(d.registry.imagePath(id), input.image);
 
@@ -62,7 +74,7 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
   const meta = {
     name: input.name, symbol: input.symbol, description: input.description,
     image: `https://ipfs.io/ipfs/${imageCid}`, showName: true, createdOn: "https://pump.fun",
-    twitter: input.twitter || undefined, telegram: input.telegram || undefined, website: input.website || undefined,
+    twitter: input.twitter || undefined, telegram: input.telegram || undefined, website: website || undefined,
   };
   const metadataCid = await d.pin.json(meta, `${input.symbol}-metadata.json`);
 
@@ -71,9 +83,10 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
   const payment = Keypair.generate();
   const evmLauncherKey = generatePrivateKey();
   const evmMakerKey = generatePrivateKey();
+  const evmPaymentKey = generatePrivateKey();
   d.registry.saveKeys(id, {
     mint: Array.from(mint.secretKey), solCreator: Array.from(solCreator.secretKey), payment: Array.from(payment.secretKey),
-    evmLauncher: evmLauncherKey, evmMaker: evmMakerKey,
+    evmLauncher: evmLauncherKey, evmMaker: evmMakerKey, evmPayment: evmPaymentKey,
   });
 
   const now = d.now();
@@ -82,10 +95,11 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
     now,
     deadlineAt: now + d.deadlineMin * 60_000,
     devWallet: input.devWallet,
+    chain: input.payChain,
     quote: await d.quote(),
     token: {
       name: input.name, symbol: input.symbol, description: input.description,
-      twitter: input.twitter ?? "", website: input.website ?? "", telegram: input.telegram ?? "",
+      twitter: input.twitter ?? "", website, telegram: input.telegram ?? "",
       imageCid, metadataCid, metadataUri: `https://ipfs.io/ipfs/${metadataCid}`,
     },
     wallets: {
@@ -94,6 +108,7 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
       evmLauncher: privateKeyToAccount(evmLauncherKey).address,
       evmMaker: privateKeyToAccount(evmMakerKey).address,
       payment: payment.publicKey.toBase58(),
+      evmPayment: privateKeyToAccount(evmPaymentKey).address,
     },
   });
   d.registry.save(rec);

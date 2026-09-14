@@ -71,7 +71,7 @@ export default function Admin() {
                   <tr key={l.id}>
                     <td><a href={`/launch/${l.id}`} style={{ display: "flex", alignItems: "center", gap: 12 }}><Img src={img(l.token.imageCid)} size={28} /><b>{l.token.name}</b><span className="mute">${l.token.symbol}</span><span className="mono dim">{l.id}</span></a></td>
                     <td><Status status={l.status} /></td>
-                    <td><b>{l.payment.receivedSol}</b> / {l.payment.requiredSol} SOL</td>
+                    <td><b>{l.payment.received}</b> / {l.payment.required} {l.payment.unit}</td>
                     <td><b>{usd(l.quote.openingFdv)}</b></td>
                     <td className="mono">{ago(l.createdAt)}</td>
                     <td className={l.launch.error ? "err" : ""} style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.launch.error ?? l.approval.note ?? ""}>{l.launch.error ?? l.approval.note ?? ""}</td>

@@ -29,6 +29,7 @@ test("buildQuote lands both sides at the same fdv when ETH allows, else caps", (
   assert.equal(q.devBuySol, 13.67);
   assert.ok(Math.abs(q.landing.pump - q.landing.pons) < 1, JSON.stringify(q.landing));
   assert.ok(q.ponsEth > 0 && q.ponsEth <= 0.32);
+  assert.ok(Math.abs(q.depositEth - (0.5 * 101) / 2521) < 1e-6, `depositEth ${q.depositEth}`);
   const capped = buildQuote({ ...base, frontEth: 0.02 });
   assert.equal(capped.ponsEth, 0.01);
   assert.ok(capped.landing.pons < capped.landing.pump);

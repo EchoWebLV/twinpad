@@ -56,6 +56,23 @@ export const config = {
     adminToken: env("ADMIN_TOKEN"),
     maxLiveMakers: num("MAX_LIVE_MAKERS", 10),
     maxOpenLaunches: num("MAX_OPEN_LAUNCHES", 20),
+    /** Failed launches are re-queued this many times before an operator has to retry by hand. */
+    autoRetries: num("LAUNCH_AUTO_RETRIES", 2),
+    retryBackoffMin: num("LAUNCH_RETRY_BACKOFF_MIN", 5),
+  },
+  /** Exit policy: at launch + afterMin the coin needs minBuyers outside holders or minUsd of outside-held value, else the pool exits. */
+  retire: {
+    enabled: bool("RETIRE_ENABLED", true),
+    afterMin: num("RETIRE_AFTER_MIN", 10),
+    minBuyers: num("RETIRE_MIN_BUYERS", 5),
+    minUsd: num("RETIRE_MIN_USD", 100),
+    selldownMin: num("RETIRE_SELLDOWN_MIN", 45),
+  },
+  /** Loss budgets in USD (fronted value − current inventory value). Coin: halt that maker. Pool: halt every maker and stop approving. */
+  guard: {
+    maxLossUsdPerCoin: num("MAX_LOSS_USD_PER_COIN", 150),
+    maxLossUsdPool: num("MAX_LOSS_USD_POOL", 500),
+    alertWebhookUrl: env("ALERT_WEBHOOK_URL"),
   },
   pinataJwt: env("PINATA_JWT"),
   maker: {
@@ -70,6 +87,8 @@ export const config = {
   server: {
     port: num("PORT", 8787),
     corsOrigin: env("CORS_ORIGIN", "*"),
+    /** Public URL of the web app. Every token's website link points at its coin page here. */
+    publicUrl: env("PUBLIC_URL", "").replace(/\/+$/, ""),
     dataDir: path.resolve(process.cwd(), env("DATA_DIR", "./data")),
   },
 };
@@ -84,6 +103,7 @@ export function redactedConfig() {
   c.pool.evmKey = mask(c.pool.evmKey);
   c.launch.adminToken = mask(c.launch.adminToken);
   c.pinataJwt = mask(c.pinataJwt);
+  c.guard.alertWebhookUrl = c.guard.alertWebhookUrl ? "set" : "missing";
   // RPC URLs can embed API keys: show host only.
   c.solana.rpcUrl = safeHost(c.solana.rpcUrl);
   c.evm.rpcUrl = safeHost(c.evm.rpcUrl);

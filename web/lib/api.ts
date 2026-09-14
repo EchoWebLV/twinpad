@@ -19,7 +19,7 @@ export async function postJson<T>(path: string, body: unknown, admin?: string): 
 }
 
 export interface Quote {
-  depositSol: number; frontSol: number; frontEth: number; devBuySol: number; ponsEth: number; openingFdv: number;
+  depositSol: number; depositEth: number; frontSol: number; frontEth: number; devBuySol: number; ponsEth: number; openingFdv: number;
   landing: { pump: number; pons: number }; supplyPct: { pump: number; pons: number }; fx: { SOL: number; ETH: number };
 }
 export interface Step { at: number; name: string; [k: string]: unknown }
@@ -27,12 +27,15 @@ export interface Launch {
   id: string; createdAt: number; status: string;
   token: { name: string; symbol: string; description: string; imageCid: string; twitter: string; website: string; telegram: string };
   devWallet: string;
-  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string };
-  payment: { address: string; requiredSol: number; receivedSol: number; paidAt: number | null; deadlineAt: number; txs: { tx: string; sol: number; late: boolean }[]; foreign: { tx: string; sol: number }[] };
+  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
+  payment: {
+    chain: "sol" | "eth"; unit: "SOL" | "ETH"; address: string; required: number; received: number; paidAt: number | null; deadlineAt: number;
+    txs: { tx: string; amount: number; late: boolean }[]; foreign: { tx: string; amount: number }[]; claimed: string[];
+  };
   approval: { status: string; at: number | null; note: string | null; auto: boolean };
   front: { sol: number; eth: number; at: number | null };
   launch: { steps: Step[]; pumpMint: string | null; ponsToken: string | null; error: string | null };
-  refund: { sol: number; txs: string[] };
+  refund: { amount: number; txs: string[] };
   quote: Quote;
 }
 export interface CoinSummary {

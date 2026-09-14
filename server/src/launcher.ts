@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import type { Registry } from "./registry.js";
 import { step, transition, type LaunchRecord } from "./record.js";
 import type { Pool } from "./pool.js";
-import { sweepSol } from "./pool.js";
+import { sweepEth, sweepSol } from "./pool.js";
 import { coinExists, readBondingCurve, sendSigned, tradeLocal } from "./solana/pump.js";
 import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, readCurve, walletClient, PONS, TOKEN_SUPPLY } from "./evm/pons.js";
 import { evmBuy, evmBalances, solanaBalances } from "./trade.js";
@@ -85,9 +85,15 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
 
     // ---- deposit → pool
     if (!rec.payment.toPoolTx) {
-      const swept = await sweepSol(ctx.conn, payKp, ctx.pool.sol.publicKey);
-      rec.payment.toPoolTx = swept?.sig ?? "none";
-      step(rec, "deposit_to_pool", now(), { sol: swept?.sol ?? 0, tx: swept?.sig ?? null });
+      if (rec.payment.chain === "eth") {
+        const swept = await sweepEth(ctx.pub, ctx.cfg.evm.rpcUrl, keys.evmPayment, ctx.pool.evmAddress);
+        rec.payment.toPoolTx = swept?.sig ?? "none";
+        step(rec, "deposit_to_pool", now(), { amount: swept?.eth ?? 0, unit: "ETH", tx: swept?.sig ?? null });
+      } else {
+        const swept = await sweepSol(ctx.conn, payKp, ctx.pool.sol.publicKey);
+        rec.payment.toPoolTx = swept?.sig ?? "none";
+        step(rec, "deposit_to_pool", now(), { amount: swept?.sol ?? 0, unit: "SOL", tx: swept?.sig ?? null });
+      }
       save();
     }
     step(rec, "funded", now(), { makerSol: rec.front.sol, makerEth: rec.front.eth });

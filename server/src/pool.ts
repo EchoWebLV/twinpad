@@ -1,5 +1,5 @@
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
-import { formatEther, parseEther, type Address, type PublicClient, type WalletClient } from "viem";
+import { formatEther, parseEther, type Address, type Hex, type PublicClient, type WalletClient } from "viem";
 import type { Config } from "./config.js";
 import { keypairFromBase58 } from "./solana/pump.js";
 import { addressOf, walletClient } from "./evm/pons.js";
@@ -88,4 +88,31 @@ export async function sweepSol(conn: Connection, from: Keypair, to: PublicKey): 
   const sol = (bal - fee) / LAMPORTS_PER_SOL;
   const sig = await sendSol(conn, from, to, sol);
   return { sig, sol };
+}
+
+/** Plain ETH transfer from a per-launch key, confirmed. */
+export async function sendEth(pub: PublicClient, rpcUrl: string, fromKey: string, to: Address, eth: number): Promise<string> {
+  const value = parseEther(eth.toFixed(18));
+  if (value <= 0n) throw new Error(`transfer of ${eth} ETH is not positive`);
+  const w = walletClient(rpcUrl, fromKey);
+  const hash = await w.sendTransaction({ account: w.account!, chain: w.chain, to, value });
+  const receipt = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
+  if (receipt.status !== "success") throw new Error(`eth transfer ${hash} reverted`);
+  return hash;
+}
+
+/** Everything on `fromKey`'s address minus a gas reserve, to `to`. Null when nothing is left after gas. */
+export async function sweepEth(pub: PublicClient, rpcUrl: string, fromKey: string, to: Address): Promise<{ sig: string; eth: number } | null> {
+  const from = addressOf(fromKey);
+  const bal = await pub.getBalance({ address: from });
+  if (bal === 0n) return null;
+  const [gas, gasPrice] = await Promise.all([pub.estimateGas({ account: from, to, value: 1n }), pub.getGasPrice()]);
+  const reserve = (gas * gasPrice * 3n) / 2n; // 50 % margin: the L1 data component moves between estimate and inclusion
+  if (bal <= reserve) return null;
+  const value = bal - reserve;
+  const w = walletClient(rpcUrl, fromKey);
+  const hash: Hex = await w.sendTransaction({ account: w.account!, chain: w.chain, to, value, gas, gasPrice });
+  const receipt = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
+  if (receipt.status !== "success") throw new Error(`eth sweep ${hash} reverted`);
+  return { sig: hash, eth: Number(formatEther(value)) };
 }

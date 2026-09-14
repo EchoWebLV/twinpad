@@ -61,6 +61,7 @@ export function buildQuote(i: QuoteInputs): Quote {
   const ponsFdvEth = ((i.pons.phantomEth + ponsNet) ** 2 / (i.pons.phantomEth * i.pons.supply)) * i.pons.supply;
   return {
     depositSol: i.depositSol,
+    depositEth: round((i.depositSol * i.fx.SOL) / i.fx.ETH, 6),
     frontSol: i.frontSol,
     frontEth: i.frontEth,
     devBuySol,

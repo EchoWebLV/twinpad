@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { plan } from "./scheduler.js";
 import { newRecord, transition, type LaunchRecord } from "./record.js";
 
-const quote = { depositSol: 0.5, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02, openingFdv: 1, landing: { pump: 1, pons: 1 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 1, ETH: 1 } };
+const quote = { depositSol: 0.5, depositEth: 0.02, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02, openingFdv: 1, landing: { pump: 1, pons: 1 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 1, ETH: 1 } };
 const mk = (id: string, status: LaunchRecord["status"], createdAt = 0) => {
-  const r = newRecord({ id, now: createdAt, deadlineAt: 1000, devWallet: "D", quote,
+  const r = newRecord({ id, now: createdAt, deadlineAt: 1000, devWallet: "D", chain: "sol" as const, quote,
     token: { name: "A", symbol: "A", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" },
-    wallets: { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "P" } });
+    wallets: { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "P", evmPayment: "0xP" } });
   const path: Record<string, LaunchRecord["status"][]> = { paid: ["paid"], approved: ["paid", "approved"], launching: ["paid", "approved", "launching"], live: ["paid", "approved", "launching", "live"] };
   for (const s of path[status] ?? []) transition(r, s, createdAt);
   return r;

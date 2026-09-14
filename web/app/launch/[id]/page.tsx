@@ -1,22 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
-import { getJson, img, usd, type Launch } from "../../../lib/api";
-import { Copy, Img, Nav, PONS, PUMP, SOLSCAN, Status, short } from "../../components/ui";
-
-interface Phantom {
-  isPhantom?: boolean;
-  connect(): Promise<{ publicKey: PublicKey }>;
-  signAndSendTransaction(tx: Transaction): Promise<{ signature: string }>;
-}
-declare global {
-  interface Window { solana?: Phantom }
-}
+import { getJson, img, postJson, usd, type Launch } from "../../../lib/api";
+import { Copy, Img, Nav, PONS, PUMP, RHSCAN, SOLSCAN, Status, short } from "../../components/ui";
+import { useWallets, type DetectedWallet } from "../../../lib/wallet";
 
 const STEPS: { key: string; title: string; desc: string }[] = [
   { key: "created", title: "Created", desc: "Metadata pinned, wallets generated" },
-  { key: "status:paid", title: "Deposit received", desc: "Watcher confirmed your SOL" },
+  { key: "status:paid", title: "Deposit received", desc: "Watcher confirmed your deposit" },
   { key: "status:approved", title: "Approved", desc: "Cleared for launch" },
   { key: "fronting", title: "Pool fronted", desc: "Maker wallets funded on both chains" },
   { key: "deposit_to_pool", title: "Deposit swept", desc: "Your deposit moved into the pool" },
@@ -33,6 +24,8 @@ export default function LaunchPage() {
   const [payErr, setPayErr] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
+  const [hash, setHash] = useState("");
+  const wallets = useWallets();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const tick = () => { setNow(Date.now()); getJson<Launch>(`/api/paid/${id}`).then((x) => { setL(x); setErr(null); }).catch((e) => setErr((e as Error).message)); };
@@ -40,24 +33,29 @@ export default function LaunchPage() {
     const t = setInterval(tick, 3000);
     return () => clearInterval(t);
   }, [id]);
-  const pay = async () => {
+  const pay = async (w: DetectedWallet) => {
     if (!l) return;
     setPaying(true);
     setPayErr(null);
     try {
-      if (!window.solana?.isPhantom) throw new Error("Phantom not found. Send the SOL manually to the address below.");
-      const { publicKey } = await window.solana.connect();
-      if (publicKey.toBase58() !== l.devWallet) throw new Error(`Connect the wallet you entered (${short(l.devWallet)}).`);
-      const { blockhash } = await getJson<{ blockhash: string }>("/api/chain/blockhash");
-      const tx = new Transaction({ feePayer: publicKey, recentBlockhash: blockhash }).add(
-        SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: new PublicKey(l.payment.address), lamports: Math.round(l.payment.requiredSol * LAMPORTS_PER_SOL) }),
-      );
-      const r = await window.solana.signAndSendTransaction(tx);
-      setSent(r.signature);
+      const sig = await w.pay(l.devWallet, l.payment.address, l.payment.required);
+      setSent(sig);
+      if (l.payment.chain === "eth") setL(await postJson<Launch>(`/api/paid/${id}/tx`, { hash: sig }));
     } catch (e) {
       setPayErr((e as Error).message);
     }
     setPaying(false);
+  };
+  const submitHash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPayErr(null);
+    try {
+      setL(await postJson<Launch>(`/api/paid/${id}/tx`, { hash: hash.trim() }));
+      setSent(hash.trim());
+      setHash("");
+    } catch (er) {
+      setPayErr((er as Error).message);
+    }
   };
   if (err) return <div className="shell"><Nav /><div className="empty" style={{ marginTop: 40 }}><b>Could not load launch</b>{err}</div></div>;
   if (!l) return <div className="shell"><Nav /><p className="mute" style={{ marginTop: 40 }}><i className="ld" />loading</p></div>;
@@ -74,6 +72,11 @@ export default function LaunchPage() {
   const stepAt = (k: string) => l.launch.steps.find((s) => s.name === k)?.at;
   const remaining = Math.max(0, l.payment.deadlineAt - now);
   const terminal = ["rejected", "expired", "failed"].includes(l.status);
+  const isEth = l.payment.chain === "eth";
+  const unit = l.payment.unit;
+  const scan = isEth ? RHSCAN : SOLSCAN;
+  const chainName = isEth ? "Robinhood Chain" : "Solana";
+  const payWith = wallets.filter((w) => w.chain === l.payment.chain);
 
   return (
     <div className="shell">
@@ -93,18 +96,33 @@ export default function LaunchPage() {
             <div className="box on r" style={{ "--i": 1 } as React.CSSProperties}>
               <span className="cap">01 · Pay the deposit</span>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-                <div className="pay-amt">{l.payment.requiredSol}<small>SOL</small></div>
+                <div className="pay-amt">{l.payment.required}<small>{unit}</small></div>
                 <span className={`st ${remaining < 10 * 60e3 ? "bad" : ""}`}>{Math.floor(remaining / 60000)} min left</span>
               </div>
-              <p className="mute">from <span className="mono">{short(l.devWallet, 6)}</span> to this address:</p>
+              <p className="mute">on {chainName}, from <span className="mono">{short(l.devWallet, 6)}</span> to this address:</p>
               <div className="addr"><code>{l.payment.address}</code><Copy text={l.payment.address} /></div>
               <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
-                <button className="btn y" onClick={pay} disabled={paying}>{paying ? "Waiting for Phantom" : "Pay with Phantom"} <span className="ar">→</span></button>
-                <span className="up mute">received {l.payment.receivedSol} / {l.payment.requiredSol} SOL</span>
+                {payWith.map((w) => (
+                  <button key={w.key} className="btn y" onClick={() => pay(w)} disabled={paying}>
+                    {w.icon && <img src={w.icon} alt="" style={{ width: 16, height: 16, marginRight: 8, verticalAlign: -3 }} />}{paying ? "Waiting for wallet" : `Pay with ${w.name}`} <span className="ar">→</span>
+                  </button>
+                ))}
+                {payWith.length === 0 && <span className="mute" style={{ fontSize: 13 }}>No {chainName} wallet detected here. Send the {unit} from your wallet to the address above.</span>}
+                <span className="up mute">received {l.payment.received} / {l.payment.required} {unit}</span>
+                {isEth && l.payment.claimed.length > 0 && <span className="up y">verifying {l.payment.claimed.length} tx</span>}
               </div>
-              {sent && <p className="mute" style={{ marginTop: 12 }}>Sent · <a className="lnk y" href={SOLSCAN(sent)} target="_blank" rel="noreferrer">view on Solscan ↗</a> · the watcher confirms it within a few seconds.</p>}
+              {sent && <p className="mute" style={{ marginTop: 12 }}>Sent · <a className="lnk y" href={scan(sent)} target="_blank" rel="noreferrer">view tx ↗</a> · the watcher confirms it within a few seconds.</p>}
               {payErr && <p className="err" style={{ marginTop: 12 }}>{payErr}</p>}
-              <p className="dim" style={{ marginTop: 14, fontSize: 12 }}>Only the wallet above counts. Payments from other wallets and payments after the deadline are refunded automatically.</p>
+              {isEth && (
+                <form className="hashrow" onSubmit={submitHash}>
+                  <input placeholder="Paid from the wallet directly? Paste the tx hash (0x…)" value={hash} onChange={(e) => setHash(e.target.value)} />
+                  <button className="btn sm" disabled={!/^0x[0-9a-fA-F]{64}$/.test(hash.trim())}>Submit</button>
+                </form>
+              )}
+              <p className="dim" style={{ marginTop: 14, fontSize: 12 }}>
+                Only the wallet above counts. Payments from other wallets and payments after the deadline are refunded automatically.
+                {isEth && " ETH payments are credited from the tx hash: the page submits it after your wallet sends, or paste it above."}
+              </p>
             </div>
           )}
           {l.status === "live" && (
@@ -126,7 +144,7 @@ export default function LaunchPage() {
               {l.launch.error && <p className="err">{l.launch.error}</p>}
               {l.approval.note && <p className="mute">{l.approval.note}</p>}
               {l.status === "failed" && <p className="mute" style={{ marginTop: 8 }}>An operator can retry from the checkpoint it stopped at. Nothing is re-spent.</p>}
-              {l.refund.txs.length > 0 && <p className="mute" style={{ marginTop: 8 }}>Refunded {l.refund.sol} SOL · {l.refund.txs.map((t) => <a key={t} className="lnk y" href={SOLSCAN(t)} target="_blank" rel="noreferrer">tx ↗ </a>)}</p>}
+              {l.refund.txs.length > 0 && <p className="mute" style={{ marginTop: 8 }}>Refunded {l.refund.amount} {unit} · {l.refund.txs.map((t) => <a key={t} className="lnk y" href={scan(t)} target="_blank" rel="noreferrer">tx ↗ </a>)}</p>}
             </div>
           )}
 
@@ -177,13 +195,13 @@ export default function LaunchPage() {
                 <div className="addr" style={{ marginTop: 0 }}><code>{l.launch.ponsToken}</code><Copy text={l.launch.ponsToken} /></div>
               </>
             )}
-            <div className="kv"><span>Dev wallet</span><b className="mono">{short(l.devWallet, 6)}</b></div>
+            <div className="kv"><span>Your wallet · {chainName}</span><b className="mono">{short(l.devWallet, 6)}</b></div>
             <div className="kv"><span>Maker · Solana</span><b className="mono">{short(l.wallets.solCreator, 6)}</b></div>
             <div className="kv"><span>Maker · Robinhood</span><b className="mono">{short(l.wallets.evmMaker, 6)}</b></div>
           </div>
           <div className="box r" style={{ "--i": 3 } as React.CSSProperties}>
             <span className="cap">Sizing</span>
-            <div className="kv"><span>Deposit</span><b>{l.quote.depositSol} SOL</b></div>
+            <div className="kv"><span>Deposit</span><b>{l.payment.required} {unit}</b></div>
             <div className="kv"><span>Pool fronts</span><b>{l.quote.frontSol} SOL + {l.quote.frontEth} ETH</b></div>
             <div className="kv"><span>Opening FDV</span><b className="y">{usd(l.quote.openingFdv)}</b></div>
             <div className="kv"><span>Landing</span><b>pump {usd(l.quote.landing.pump)} <span className="dim">/</span> pons {usd(l.quote.landing.pons)}</b></div>
