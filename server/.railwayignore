@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+keys/
+test-launch/
+.env
+.env.*
+!.env.example
+*.keypair.json
+mint-*.json
