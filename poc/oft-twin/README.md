@@ -85,7 +85,7 @@ cd poc/oft-twin/lz && pnpm hardhat lz:deploy --ci --networks robinhood-mainnet -
 ```bash
 cd poc/oft-twin/lz && pnpm hardhat lz:oft:solana:init-config --oapp-config layerzero.config.ts
 ```
-6. Wire both sides (peers, DVN = LayerZero Labs, confirmations, enforced options); review the plan it prints, then confirm:
+6. Wire both sides (peers, required DVNs = LayerZero Labs + Nethermind, confirmations, enforced options); review the plan it prints, then confirm:
 ```bash
 cd poc/oft-twin/lz && pnpm hardhat lz:oapp:wire --oapp-config layerzero.config.ts
 ```
@@ -94,6 +94,12 @@ cd poc/oft-twin/lz && pnpm hardhat lz:oapp:wire --oapp-config layerzero.config.t
 cd poc/oft-twin/lz && pnpm hardhat lz:oft:send --src-eid 30168 --dst-eid 30416 --amount 100000 --to 0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3 --token-program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
 ```
    Follow the message on https://layerzeroscan.com. When it lands, `LockstepOFT.totalSupply()` equals the escrowed amount.
+   If it sits in `Ready for DVNs to verify`: the first two sends (nonces 1 and 2, LayerZero Labs as the only DVN) did, for
+   42 minutes, while every message delivered on Robinhood in that window had two or more DVNs. `lz/rescue-bridge.sh`
+   (dry run, `--fork` rehearsal, `--confirm`) delivered them owner-side: it sets the receive config to the owner as the only
+   DVN, calls `verify` + `commitVerification` + `lzReceive` per nonce, then restores the config. Its header, guid and payload
+   hash lines are those two packets; a new stall needs them replaced from the Solana tx (`PacketSent` event) and the
+   restore line set to the current DVN list.
 8. Seed the Uniswap v4 pool one-sided at the live pump.fun price: LSTP only, zero ETH beyond gas. The creator budget is
    at most 1 SOL, which cannot fund a balanced pool, so the position sits from the current price upward and only sells LSTP
    as buyers push the price up; the first buy sets it in motion. Dry run first:

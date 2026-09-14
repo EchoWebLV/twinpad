@@ -41,8 +41,10 @@ const SOLANA_ENFORCED_OPTIONS: OAppEnforcedOption[] = [
 ]
 
 // Simple Config Generator: DVNs are resolved by name from the LayerZero metadata API for both chains.
-// 'LayerZero Labs' runs a DVN on Robinhood (0xd01a…5b12) and Solana (4VDj…Lfhb). To add a second required
-// verifier once the PoC is proven, extend the array, e.g. [['LayerZero Labs', 'Nethermind'], []].
+// Two required verifiers: 'LayerZero Labs' (Robinhood 0xd01a…5b12, Solana 4VDj…Lfhb) and 'Nethermind'
+// (Robinhood 0x0ffe…fdf8, Solana GPjy…aGab). The first two mainnet sends used LayerZero Labs alone and sat in
+// "Ready for DVNs to verify" for 42 minutes until rescue-bridge.sh delivered them owner-side; in the same window
+// every message delivered on Robinhood had two or more DVNs and none was verified by LayerZero Labs alone.
 export default async function () {
     // pathways are bidirectional: declaring [A, B] also creates [B, A]
     const connections = await generateConnectionsConfig([
@@ -50,7 +52,7 @@ export default async function () {
             solanaContract, // Chain A
             robinhoodContract, // Chain B
             // [ requiredDVNs[], [ optionalDVNs[], threshold ] ]
-            [['LayerZero Labs'], []],
+            [['LayerZero Labs', 'Nethermind'], []],
             // [ A -> B confirmations (Solana slots), B -> A confirmations (Robinhood blocks) ]
             [32, 15],
             // [ Chain B enforced options, Chain A enforced options ]
