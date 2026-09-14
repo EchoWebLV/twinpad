@@ -169,3 +169,30 @@ export async function refundDeposit(chains: Chains, registry: Registry, rec: Lau
   }
   registry.save(rec);
 }
+
+/**
+ * Refund from the pool wallets: for a deposit that already moved to the pool (`payment.toPoolTx`), or any amount
+ * the operator owes an address (an unclaimed transfer the sweep picked up). Defaults: the payer, what they paid
+ * minus what was refunded already. Records `deposit_refunded` and bumps `refund`.
+ */
+export async function refundFromPool(
+  pool: { transferSol(to: PublicKey, sol: number): Promise<string>; transferEth(to: Address, eth: number): Promise<string> },
+  registry: Registry, rec: LaunchRecord, now: number, opts: { to?: string; amount?: number; reason?: string } = {},
+): Promise<{ to: string; amount: number; sig: string }> {
+  const to = opts.to ?? rec.payment.from ?? rec.devWallet;
+  const amount = Math.round((opts.amount ?? rec.payment.received - rec.refund.amount) * 1e9) / 1e9;
+  if (!to) throw new Error("no address to refund to");
+  if (!(amount > 0)) throw new Error(`nothing to refund (paid ${rec.payment.received}, refunded ${rec.refund.amount})`);
+  const sig = rec.payment.chain === "eth"
+    ? await pool.transferEth(getAddress(to), amount)
+    : await pool.transferSol(new PublicKey(to), amount);
+  const payer = (rec.payment.from ?? rec.devWallet).toLowerCase();
+  if (to.toLowerCase() === payer) {
+    rec.refund.amount = Math.round((rec.refund.amount + amount) * 1e9) / 1e9;
+    rec.refund.paid = rec.payment.received;
+    rec.refund.txs.push(sig);
+  }
+  step(rec, to.toLowerCase() === payer ? "deposit_refunded" : "excess_refunded", now, { amount, unit: rec.payment.unit, to, tx: sig, from: "pool", reason: opts.reason ?? "admin" });
+  registry.save(rec);
+  return { to, amount, sig };
+}

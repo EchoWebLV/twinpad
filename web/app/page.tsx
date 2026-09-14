@@ -38,6 +38,8 @@ export default function Home() {
   const byId = new Map(coins.map((c) => [c.id, c]));
   const queue = launches.filter((l) => OPEN.includes(l.status));
   const launched = launches.filter((l) => l.status === "live" || l.launch.steps.some((s) => s.name === "launched"));
+  // Everything live is in "Live now" already; this list is what ran here and has since been closed.
+  const closed = launched.filter((l) => l.status !== "live" && !byId.has(l.id));
   const other = launches.filter((l) => ["failed", "rejected", "expired"].includes(l.status) && !launched.includes(l));
 
   const tick: React.ReactNode[] = [];
@@ -102,15 +104,14 @@ export default function Home() {
         )}
       </section>
 
+      {closed.length > 0 && (
       <section className="section">
-        <Sh n="02" title="Launched" sub="every coin this pad has put on both chains" />
-        {launched.length === 0 ? (
-          <div className="empty"><b>Nothing launched yet</b>Launched coins are listed here with their pump.fun and Pons addresses.</div>
-        ) : (
+        <Sh n="02" title="Closed" sub="ran here, maker retired; still tradable on both chains" />
+        {(
           <div>
             <div className="list-head"><span /><span>Coin</span><span className="hide">Opening FDV</span><span className="hide">Now</span><span>Launched</span><span className="hide" style={{ textAlign: "right" }}>Trade</span></div>
             <div className="list">
-              {launched.map((l) => {
+              {closed.map((l) => {
                 const c = byId.get(l.id);
                 const launchedAt = (l.launch.steps.find((s) => s.name === "launched")?.at as number | undefined) ?? l.createdAt;
                 return (
@@ -131,9 +132,10 @@ export default function Home() {
           </div>
         )}
       </section>
+      )}
 
       <section className="section">
-        <Sh n="03" title="Queue" sub="deposits, approvals and launches in progress" />
+        <Sh n={closed.length > 0 ? "03" : "02"} title="Queue" sub="deposits, approvals and launches in progress" />
         {queue.length === 0 ? (
           <div className="empty"><b>Queue is empty</b>Submit a launch and it appears here while the deposit and launch go through.</div>
         ) : (

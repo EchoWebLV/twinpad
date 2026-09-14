@@ -151,7 +151,7 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const ALLOWED: Record<LaunchStatus, LaunchStatus[]> = {
   awaiting_deposit: ["paid", "expired", "rejected"],
   paid: ["approved", "rejected"],
-  approved: ["launching", "rejected"],
+  approved: ["launching", "rejected", "closing"], // closing: a ban after the front was funded sweeps the per-coin wallets back
   launching: ["live", "failed"],
   live: ["closing"],
   closing: ["closed"],

@@ -9,7 +9,8 @@ import { sweepEth, sweepSol } from "./pool.js";
 import { coinExists, readBondingCurve, sendBundle, sendSigned, signatureOf, tradeLocal, tradeLocalBundle, waitForSignature, type TradeLocalBody } from "./solana/pump.js";
 import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, readCurve, walletClient, PONS, TOKEN_SUPPLY } from "./evm/pons.js";
 import { evmBuy, evmBalances, solanaBalances, solanaBuy } from "./trade.js";
-import { grossFromNet, quoteNetForFdv } from "./quote.js";
+import { grossFromNet, quoteNetForFdv, affordableBuySol } from "./quote.js";
+import { alert } from "./alerts.js";
 
 export interface LaunchCtx {
   cfg: Config;
@@ -63,16 +64,27 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     step(rec, "preflight", now(), { launchFee, canLaunch: pf.canLaunch });
     save();
 
+    // Whatever reached the payment address beyond what the watcher credited (an unclaimed transfer, someone else's
+    // ETH) is now in the pool: record it so the operator can refund it, and shout.
+    const noteExcess = (swept: number) => {
+      const excess = round6(swept - rec.payment.received);
+      if (excess <= 0.000_01) return;
+      step(rec, "deposit_excess", now(), { excess, unit: rec.payment.unit, received: rec.payment.received, swept });
+      log(`deposit sweep moved ${excess} ${rec.payment.unit} more than credited; refund it with /api/admin/paid/${rec.id}/refund`);
+      void alert(`${rec.id}: deposit sweep moved ${excess} ${rec.payment.unit} more than credited (${swept} vs ${rec.payment.received}); refund via /api/admin/paid/${rec.id}/refund`);
+    };
     // ---- deposit → pool first: a deployer boost rides in the deposit and the pool fronts it right back
     if (!rec.payment.toPoolTx) {
       if (rec.payment.chain === "eth") {
         const swept = await sweepEth(ctx.pub, ctx.cfg.evm.rpcUrl, keys.evmPayment, ctx.pool.evmAddress);
         rec.payment.toPoolTx = swept?.sig ?? "none";
         step(rec, "deposit_to_pool", now(), { amount: swept?.eth ?? 0, unit: "ETH", tx: swept?.sig ?? null });
+        noteExcess(swept?.eth ?? 0);
       } else {
         const swept = await sweepSol(ctx.conn, payKp, ctx.pool.sol.publicKey);
         rec.payment.toPoolTx = swept?.sig ?? "none";
         step(rec, "deposit_to_pool", now(), { amount: swept?.sol ?? 0, unit: "SOL", tx: swept?.sig ?? null });
+        noteExcess(swept?.sol ?? 0);
       }
       save();
     }
@@ -190,8 +202,12 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       const held = await solanaBalances(ctx.conn, solMaker.publicKey, MINT);
       if (held.tokens < 1) {
         const o = { slippagePct: ctx.cfg.solana.slippagePct, priorityFeeSol: ctx.cfg.solana.priorityFeeSol };
-        L.txs.pumpBuy = await solanaBuy(ctx.conn, solMaker, MINT, devBuy, o);
-        step(rec, "pump_opening_buy", now(), { sol: devBuy, tx: L.txs.pumpBuy });
+        // The buy costs devBuy × (1 + pump.fun + PumpPortal fees) plus rent: never ask for more than the maker can pay.
+        const spend = Math.min(devBuy, affordableBuySol(held.sol));
+        if (spend <= 0) throw new Error(`maker holds ${held.sol.toFixed(4)} SOL, not enough for the opening buy`);
+        if (spend < devBuy) log(`opening buy trimmed to ${spend} SOL (maker holds ${held.sol.toFixed(4)})`);
+        L.txs.pumpBuy = await solanaBuy(ctx.conn, solMaker, MINT, spend, o);
+        step(rec, "pump_opening_buy", now(), { sol: spend, quoted: devBuy, tx: L.txs.pumpBuy });
       } else L.txs.pumpBuy = "held";
       save();
     }

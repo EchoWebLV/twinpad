@@ -65,6 +65,9 @@ export const config = {
     evmMakerCash: num("EVM_MAKER_CASH", 0.01),
     autoApprove: bool("AUTO_APPROVE", false),
     adminToken: env("ADMIN_TOKEN"),
+    /** Comma-separated. Wallets that may not launch; name/symbol substrings that are reserved. Admin bans persist in DATA_DIR/bans.json. */
+    bannedWallets: env("BANNED_WALLETS"),
+    bannedNames: env("BANNED_NAMES"),
     maxLiveMakers: num("MAX_LIVE_MAKERS", 10),
     maxOpenLaunches: num("MAX_OPEN_LAUNCHES", 20),
     /** Failed launches are re-queued this many times before an operator has to retry by hand. */

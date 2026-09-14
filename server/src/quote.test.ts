@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pumpLanding, quoteNetForFdv, grossFromNet, buildQuote, sizeFront, parityDevBuySol, PUMP_VIRTUAL_SOL, PUMP_VIRTUAL_TOKENS } from "./quote.js";
+import { pumpLanding, quoteNetForFdv, grossFromNet, buildQuote, sizeFront, parityDevBuySol, affordableBuySol, frontForDevBuy, BUY_FEE_RATE, PUMP_VIRTUAL_SOL, PUMP_VIRTUAL_TOKENS } from "./quote.js";
 
 test("pumpLanding: 13.687 SOL lands near TWINE's observed opening (≈ 59 SOL fdv, ~33 % of supply)", () => {
   const l = pumpLanding(13.687, 0);
@@ -26,7 +26,7 @@ test("buildQuote lands both sides at the same fdv when ETH allows, else caps", (
     fx: { SOL: 101, ETH: 2521 }, pons: { phantomEth: 2, supply: 1e9, feeBps: 100, creatorTaxBps: 200 },
   };
   const q = buildQuote(base);
-  assert.equal(q.devBuySol, 13.67);
+  assert.equal(q.devBuySol, 13.4349); // (13.8 − 0.13) / 1.0175: the buy plus pump.fun + PumpPortal fees fits the front
   assert.ok(Math.abs(q.landing.pump - q.landing.pons) < 1, JSON.stringify(q.landing));
   assert.ok(q.ponsEth > 0 && q.ponsEth <= 0.32);
   assert.ok(Math.abs(q.depositEth - (0.5 * 101) / 2521) < 1e-6, `depositEth ${q.depositEth}`);
@@ -62,10 +62,27 @@ test("buildQuote: a deployer boost adds to the dev buy on top of the pool's fron
   const plain = buildQuote(base);
   const boosted = buildQuote({ ...base, boostSol: 2 });
   assert.equal(plain.boostSol, 0);
-  assert.equal(plain.devBuySol, 0.87);
+  assert.equal(plain.devBuySol, 0.855);
   assert.equal(boosted.boostSol, 2);
-  assert.equal(boosted.devBuySol, 2.87);
+  assert.equal(boosted.devBuySol, 2.8206);
   assert.equal(boosted.frontSol, 1);
   assert.ok(boosted.openingFdv > plain.openingFdv);
   assert.ok(boosted.parityDevBuySol > 6 && boosted.parityDevBuySol === plain.parityDevBuySol);
+});
+
+test("affordableBuySol: a 6.644 SOL maker cannot pay for a 6.554 SOL buy (fees), but can for 6.52", () => {
+  const max = affordableBuySol(6.644);
+  assert.ok(max < 6.554, `max ${max}`);
+  assert.ok(max >= 6.51, `max ${max}`);
+  assert.ok(Math.abs(max * (1 + BUY_FEE_RATE) + 0.01 - 6.644) < 1e-3);
+  assert.equal(affordableBuySol(0.005), 0);
+});
+
+test("frontForDevBuy inverts buildQuote's dev buy sizing", () => {
+  const front = frontForDevBuy(5, 0.13);
+  const q = buildQuote({
+    depositSol: 0.5, frontSol: front, frontEth: 0.33, solGasBudget: 0.13, evmMakerCash: 0.01,
+    fx: { SOL: 150, ETH: 3000 }, pons: { phantomEth: 1.4, supply: 1e9, feeBps: 100, creatorTaxBps: 0 },
+  });
+  assert.ok(Math.abs(q.devBuySol - 5) < 1e-3, `devBuy ${q.devBuySol}`);
 });

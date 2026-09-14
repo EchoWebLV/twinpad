@@ -173,6 +173,11 @@ Admin (`x-admin-token` header)
 POST /api/admin/paid/:id/approve
 POST /api/admin/paid/:id/reject
 POST /api/admin/paid/:id/retry
+POST /api/admin/paid/:id/ban           {note?, names?: [..], refund?: false}  ban deployer + payer wallets (and names), reject, close if fronted, refund the deposit (payment address or pool)
+POST /api/admin/paid/:id/refund        {to?, amount?, reason?}  refund from the pool: the payer by default; to+amount for an unclaimed transfer the sweep picked up (`deposit_excess` step)
+GET  /api/admin/bans                                 banned wallets + reserved names (DATA_DIR/bans.json, seeded from BANNED_WALLETS / BANNED_NAMES)
+POST /api/admin/bans                   {wallets?: [..], names?: [..]}
+POST /api/admin/bans/remove            {wallets?: [..], names?: [..]}
 POST /api/admin/coins/:id/maker/halt
 POST /api/admin/coins/:id/maker/resume
 POST /api/admin/coins/:id/close        {reason?}  sell back, collect fees, sweep to the pool (live, failed, stuck closing)

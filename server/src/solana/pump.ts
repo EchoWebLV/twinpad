@@ -198,7 +198,12 @@ export function signatureOf(tx: VersionedTransaction): string {
 }
 
 export async function sendSigned(conn: Connection, tx: VersionedTransaction): Promise<string> {
-  const sig = await conn.sendTransaction(tx, { skipPreflight: false, maxRetries: 3 });
+  let sig: string;
+  try {
+    sig = await conn.sendTransaction(tx, { skipPreflight: false, maxRetries: 3 });
+  } catch (e) {
+    throw new Error(oneLineSendError(e));
+  }
   const latest = await conn.getLatestBlockhash("confirmed");
   await conn.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   return sig;
@@ -252,4 +257,16 @@ export async function collectCreatorFee(conn: Connection, creator: Keypair): Pro
   const sig = await conn.sendTransaction(tx, { skipPreflight: false, maxRetries: 3 });
   await conn.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   return { sig, sol: (bal - rentExempt) / 1e9 };
+}
+
+/**
+ * web3's SendTransactionError spreads the reason over several lines ("Simulation failed. \nMessage: … \nLogs: …"),
+ * and the launch record keeps the first line only. Fold the message and the last program logs into one line.
+ */
+export function oneLineSendError(e: unknown): string {
+  const err = e as { message?: string; logs?: string[]; transactionLogs?: string[] };
+  const logs = err.logs ?? err.transactionLogs ?? [];
+  const head = String(err.message ?? e).split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("Logs:") && !l.startsWith("Catch the")).slice(0, 2).join(" ");
+  const tail = logs.filter((l) => /failed|insufficient|Error|error|exceeded/.test(l)).slice(-3).join(" | ");
+  return tail ? `${head} | ${tail}` : head;
 }

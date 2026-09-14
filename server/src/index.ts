@@ -1,3 +1,4 @@
+import path from "node:path";
 import { formatEther } from "viem";
 import { config, redactedConfig } from "./config.js";
 import { Registry } from "./registry.js";
@@ -7,9 +8,10 @@ import { publicClient, launchPreflight, PONS } from "./evm/pons.js";
 import { fx } from "./fx.js";
 import { pinFile, pinJson } from "./ipfs.js";
 import { createLaunch } from "./paid.js";
-import { buildQuote, sizeFront } from "./quote.js";
+import { buildQuote, sizeFront, frontForDevBuy } from "./quote.js";
 import { Recovery } from "./recover.js";
-import { ETH_TX_HASH, PaymentWatcher, refundDeposit } from "./payments.js";
+import { ETH_TX_HASH, PaymentWatcher, refundDeposit, refundFromPool } from "./payments.js";
+import { Bans, type BanList } from "./bans.js";
 import { Scheduler, approve, reject } from "./scheduler.js";
 import { runLaunch } from "./launcher.js";
 import { CoinState } from "./coin.js";
@@ -32,6 +34,8 @@ async function main() {
   const registry = new Registry(config.server.dataDir);
   const pool = new Pool(config, conn, pub);
   console.log(`[boot] pool solana ${pool.sol.publicKey.toBase58()} robinhood ${pool.evmAddress}`);
+  const bans = new Bans(path.join(config.server.dataDir, "bans.json"), { wallets: Bans.fromEnv(config.launch.bannedWallets), names: Bans.fromEnv(config.launch.bannedNames) });
+  console.log(`[boot] bans ${JSON.stringify(bans.list())}`);
 
   // ---- live coins
   const coins = new Map<string, CoinState>();
@@ -91,7 +95,7 @@ async function main() {
     if (config.launch.autoSize) {
       const free = await freeNow(Number(formatEther(pf.launchFee)));
       const parity = buildQuote({ depositSol: 0, frontSol: 1, frontEth: 1, solGasBudget: 0, evmMakerCash: 0, fx: rates, pons }).parityDevBuySol;
-      const maxSol = Math.min(config.launch.frontSol, parity + config.launch.solGasBudget);
+      const maxSol = Math.min(config.launch.frontSol, frontForDevBuy(parity, config.launch.solGasBudget));
       front = sizeFront(free, { sol: config.launch.frontSolMin, eth: config.launch.frontEthMin }, { sol: maxSol, eth: config.launch.frontEth });
     }
     return buildQuote({
@@ -172,6 +176,9 @@ async function main() {
     if (!limiter.allow(ip)) throw new HttpError(429, "one launch per minute per address");
     if (registry.list({ status: OPEN_STATUSES }).length >= config.launch.maxOpenLaunches) throw new HttpError(503, "launches are full right now");
     if (!config.pinataJwt) throw new HttpError(503, "PINATA_JWT not configured");
+    const b = (body ?? {}) as { name?: unknown; symbol?: unknown; devWallet?: unknown };
+    const why = bans.refuse({ name: String(b.name ?? ""), symbol: String(b.symbol ?? ""), devWallet: String(b.devWallet ?? "") });
+    if (why) throw new HttpError(403, why);
     if (await poolShort()) throw new HttpError(503, "the pool cannot front a launch right now; try again later");
     return createLaunch({
       registry, deadlineMin: config.launch.depositDeadlineMin, now: Date.now, quote: quoteNow, maxBoostSol: config.launch.maxBoostSol, publicUrl: config.server.publicUrl,
@@ -221,6 +228,54 @@ async function main() {
     registry.save(r);
     void scheduler.tick();
     return r;
+  }, { admin: true });
+  /**
+   * Ban: the deployer's wallet and the payer may not launch again, the record is rejected, whatever the pool fronted
+   * comes back (a funded or failed launch is closed: per-coin wallets swept), and the deposit goes back to the payer
+   * — from the payment address if it is still there, else from the pool. Body: { note?, names?: string[], refund?: false }.
+   */
+  router.post("/api/admin/paid/:id/ban", async (p, body) => {
+    const r = rec(p.id);
+    const b = (body ?? {}) as { note?: unknown; names?: unknown; refund?: unknown };
+    const note = typeof b.note === "string" ? b.note : "banned";
+    if (["launching", "live", "closing"].includes(r.status)) throw new HttpError(409, `status is ${r.status}; close it first`);
+    const names = Array.isArray(b.names) ? b.names.map(String) : [];
+    bans.add({ wallets: [r.devWallet, r.payment.from ?? ""], names });
+    if (r.approval.status !== "rejected") r.approval = { status: "rejected", at: Date.now(), note, auto: false };
+    step(r, "banned", Date.now(), { note, wallets: [r.devWallet, r.payment.from].filter(Boolean) });
+    registry.save(r);
+    if (["awaiting_deposit", "paid", "approved"].includes(r.status) && !r.front.at) {
+      transition(r, "rejected", Date.now());
+      registry.save(r);
+      await refundDeposit(chains, registry, r, Date.now());
+    } else if (["approved", "failed"].includes(r.status)) {
+      await close(r, note);
+    }
+    const owed = Math.round((r.payment.received - r.refund.amount) * 1e9) / 1e9;
+    const refund = b.refund === false || !r.payment.toPoolTx || r.payment.toPoolTx === "none" || owed <= 0
+      ? null
+      : await refundFromPool(pool, registry, r, Date.now(), { reason: "ban" });
+    return { record: publicRecord(r), refund, bans: bans.list() };
+  }, { admin: true });
+  /** Refund from the pool. Defaults: the payer, what they paid minus refunds so far. { to, amount } for an unclaimed transfer the deposit sweep picked up. */
+  router.post("/api/admin/paid/:id/refund", async (p, body) => {
+    const r = rec(p.id);
+    const b = (body ?? {}) as { to?: unknown; amount?: unknown; reason?: unknown };
+    const to = typeof b.to === "string" && b.to.trim() ? b.to.trim() : undefined;
+    const amount = b.amount == null || b.amount === "" ? undefined : Number(b.amount);
+    if (amount != null && !(amount > 0)) throw new HttpError(400, "amount must be positive");
+    if (!to && (!r.payment.toPoolTx || r.payment.toPoolTx === "none")) throw new HttpError(409, "the deposit is still on the payment address; reject or ban refunds it from there");
+    const refund = await refundFromPool(pool, registry, r, Date.now(), { to, amount, reason: typeof b.reason === "string" ? b.reason : "admin" });
+    return { record: publicRecord(r), refund };
+  }, { admin: true });
+  router.get("/api/admin/bans", () => bans.list(), { admin: true });
+  router.post("/api/admin/bans", (_p, body) => {
+    const b = (body ?? {}) as Partial<BanList>;
+    return bans.add({ wallets: Array.isArray(b.wallets) ? b.wallets.map(String) : [], names: Array.isArray(b.names) ? b.names.map(String) : [] });
+  }, { admin: true });
+  router.post("/api/admin/bans/remove", (_p, body) => {
+    const b = (body ?? {}) as Partial<BanList>;
+    return bans.remove({ wallets: Array.isArray(b.wallets) ? b.wallets.map(String) : [], names: Array.isArray(b.names) ? b.names.map(String) : [] });
   }, { admin: true });
   router.post("/api/admin/coins/:id/maker/halt", (p) => ({ ok: makers.halt(p.id) }), { admin: true });
   router.post("/api/admin/coins/:id/maker/resume", (p) => ({ ok: makers.resume(p.id) }), { admin: true });

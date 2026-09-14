@@ -5,7 +5,21 @@ export const PUMP_VIRTUAL_SOL = 30;
 export const PUMP_VIRTUAL_TOKENS = 1_073_000_000;
 /** pump.fun protocol + creator fee on curve buys, bps. Estimate only; the launcher reads the real curve after create. */
 export const PUMP_FEE_BPS = 125;
+/** PumpPortal's fee on trade-local buys, bps, paid on top of the SOL spent. */
+export const PUMPPORTAL_FEE_BPS = 50;
+/** What a pump.fun buy of X SOL really costs the wallet: X × (1 + fees). Rent, tip and priority come out of SOL_GAS_BUDGET. */
+export const BUY_FEE_RATE = (PUMP_FEE_BPS + PUMPPORTAL_FEE_BPS) / 10_000;
 export const TOTAL_SUPPLY = 1_000_000_000;
+
+/** Largest dev buy a wallet holding `sol` can pay for, keeping `reserve` for rent, tip and priority fees. */
+export function affordableBuySol(sol: number, reserve = 0.01): number {
+  return Math.max(0, round((sol - reserve) / (1 + BUY_FEE_RATE), 4));
+}
+
+/** Front (SOL) that funds a dev buy of `devBuy` once fees and the gas budget are added back. */
+export function frontForDevBuy(devBuy: number, solGasBudget: number): number {
+  return round(devBuy * (1 + BUY_FEE_RATE) + solGasBudget, 4);
+}
 
 /** Tokens received and resulting fdv (in SOL) when `sol` (gross) buys a fresh pump.fun curve. */
 export function pumpLanding(sol: number, feeBps = PUMP_FEE_BPS) {
@@ -76,7 +90,8 @@ export interface QuoteInputs {
 /** Pre-launch sizing shown to the deployer and stored on the record. */
 export function buildQuote(i: QuoteInputs): Quote {
   const boostSol = round(i.boostSol ?? 0, 6);
-  const devBuySol = round(i.frontSol + boostSol - i.solGasBudget, 4);
+  // The maker holds front + boost − creator share; the buy costs devBuy × (1 + fees), so size it from what is spendable.
+  const devBuySol = Math.max(0, round((i.frontSol + boostSol - i.solGasBudget) / (1 + BUY_FEE_RATE), 4));
   const pump = pumpLanding(devBuySol);
   const targetUsd = pump.fdvSol * i.fx.SOL;
   const targetEth = targetUsd / i.fx.ETH;
