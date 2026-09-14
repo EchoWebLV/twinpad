@@ -139,10 +139,18 @@ export function redactedConfig() {
   return c;
 }
 
+/** Host(s) only: RPC URLs can embed API keys. Accepts the comma-separated list EVM_RPC_URL allows. */
 export function safeHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return "(invalid url)";
-  }
+  return url
+    .split(",")
+    .map((u) => u.trim())
+    .filter(Boolean)
+    .map((u) => {
+      try {
+        return new URL(u).host;
+      } catch {
+        return "(invalid url)";
+      }
+    })
+    .join(",") || "(invalid url)";
 }

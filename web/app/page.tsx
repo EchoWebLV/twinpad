@@ -40,6 +40,8 @@ export default function Home() {
   const launched = launches.filter((l) => l.status === "live" || l.launch.steps.some((s) => s.name === "launched"));
   // Everything live is in "Live now" already; this list is what ran here and has since been closed.
   const closed = launched.filter((l) => l.status !== "live" && !byId.has(l.id));
+  // section numbers stay dense when "Closed" is hidden: 01 live, [02 closed], queue, [did not launch], how it works
+  const sec = (i: number) => String(i + (closed.length > 0 ? 1 : 0)).padStart(2, "0");
   const other = launches.filter((l) => ["failed", "rejected", "expired"].includes(l.status) && !launched.includes(l));
 
   const tick: React.ReactNode[] = [];
@@ -135,7 +137,7 @@ export default function Home() {
       )}
 
       <section className="section">
-        <Sh n={closed.length > 0 ? "03" : "02"} title="Queue" sub="deposits, approvals and launches in progress" />
+        <Sh n={sec(2)} title="Queue" sub="deposits, approvals and launches in progress" />
         {queue.length === 0 ? (
           <div className="empty"><b>Queue is empty</b>Submit a launch and it appears here while the deposit and launch go through.</div>
         ) : (
@@ -156,7 +158,7 @@ export default function Home() {
 
       {other.length > 0 && (
         <section className="section">
-          <Sh n="04" title="Did not launch" sub="rejected, expired or failed" />
+          <Sh n={sec(3)} title="Did not launch" sub="rejected, expired or failed" />
           <div className="list">
             {other.map((l) => (
               <a key={l.id} className="rowc" href={`/launch/${l.id}`}>
@@ -172,7 +174,7 @@ export default function Home() {
       )}
 
       <section className="section" id="how">
-        <Sh n={other.length ? "05" : "04"} title="How it works" />
+        <Sh n={sec(other.length ? 4 : 3)} title="How it works" />
         <div className="how">
           <div className="step"><div className="n">01</div><h3>Submit</h3><p>Name, symbol, image, socials. Metadata is pinned to IPFS and your pump.fun address is known before anything is spent.</p></div>
           <div className="step"><div className="n">02</div><h3>Deposit</h3><p>Send {q ? `${q.depositSol} SOL` : "the deposit"} from your wallet to a fresh payment address. Wrong-wallet or late payments are refunded automatically.</p></div>
