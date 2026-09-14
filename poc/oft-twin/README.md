@@ -55,7 +55,8 @@ Fund first: SOL to `CbezAz2tauHMhacv2X4mcqWvML8hfUH1o683NiRtqNrG` (program rent 
 plus fees and rents for the deploy, adapter, wiring and sends). `launch/fund.py` moves it from the Twinpad pool
 wallet: `python3 fund.py` dry-runs 0.1 SOL (the launch alone), `python3 fund.py --sol 3.5 --confirm` sends enough
 for the whole sheet; it reads `POOL_SOL_KEY` from the file named by `POOL_ENV` in `launch/.env` and refuses to
-cross the pool's `POOL_MIN_SOL` floor. ETH on Robinhood Chain to
+cross the pool's `POOL_MIN_SOL` floor. `launch/fund-eth.sh` does the same for ETH from the pool EVM wallet
+(`bash fund-eth.sh` dry-runs 0.03 ETH, `--confirm` sends, floor `POOL_MIN_ETH`). ETH on Robinhood Chain to
 `0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3` (deploy + wiring gas, the pool seed, the swap test, the return
 bridge fee). Fresh clone only: `pnpm install` in `lz/` and `uniswap/`, then rebuild the program with
 `cd lz && anchor build -v -e OFT_ID=3j8E9XzJ5LpKPcHMWyB36oE1ju9CZ2MvMXTYqFdn97MZ` (Docker).
