@@ -97,10 +97,22 @@ export async function evmBuy(pub: PublicClient, wallet: WalletClient, token: Add
 }
 
 /** Sell whole tokens on Pons (curve or v4). Handles Permit2 approvals for the router path. */
+/**
+ * Wei-units to sell for a float token amount: floored to 6 decimals, never above `balance`.
+ * A float read back from an 18-decimal balance rounds either way at the 7th decimal; rounding up made
+ * the curve's transferFrom revert (ERC20InsufficientBalance) whenever the maker sold everything it held.
+ */
+export function sellAmount(tokens: number, balance: bigint): bigint {
+  const floored = parseEther((Math.floor(tokens * 1e6) / 1e6).toFixed(6));
+  return floored > balance ? balance : floored;
+}
+
 export async function evmSell(pub: PublicClient, wallet: WalletClient, token: Address, tokens: number, slippagePct: number) {
   const l = await readLaunch(pub, token);
   const me = wallet.account!.address;
-  const tokensIn = parseEther(tokens.toFixed(6));
+  const held = await pub.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+  const tokensIn = sellAmount(tokens, held);
+  if (tokensIn === 0n) throw new Error(`nothing to sell: wallet holds ${Number(held) / 1e18} tokens`);
   const { encodeFunctionData } = await import("viem");
   if (Number(l.phase) < 2) {
     const allowance = await pub.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [me, l.curve] });

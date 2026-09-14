@@ -207,7 +207,7 @@ export default function LaunchPage() {
                     <tr key={i}>
                       <td>{new Date(s.at).toLocaleTimeString()}</td>
                       <td className="k">{s.name}</td>
-                      <td className="mono">{Object.entries(s).filter(([k]) => k !== "at" && k !== "name").map(([k, v]) => `${k}=${String(v)}`).join("  ")}</td>
+                      <td className="mono">{Object.entries(s).filter(([k]) => k !== "at" && k !== "name").map(([k, v]) => `${k}=${v !== null && typeof v === "object" ? JSON.stringify(v) : String(v)}`).join("  ")}</td>
                     </tr>
                   ))}
                 </tbody>

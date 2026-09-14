@@ -194,7 +194,6 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         }
       }
       L.pumpMint = MINT.toBase58();
-      L.launchedAt = now();
       save();
     }
     // The opening buy is separate from the create in the split flow; make sure the maker actually holds tokens.
@@ -283,6 +282,8 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     const [s, e] = await Promise.all([solanaBalances(ctx.conn, solMaker.publicKey, MINT), evmBalances(ctx.pub, maker, L.ponsToken as Address)]);
     rec.seed = { pumpTokens: Math.round(s.tokens), ponsTokens: Math.round(e.tokens), openingFdv: Math.round(targetUsd), at: now() };
     step(rec, "launched", now(), { pumpMint: L.pumpMint, ponsToken: L.ponsToken, pilePump: rec.seed.pumpTokens, pilePons: rec.seed.ponsTokens });
+    // Stamped here, not at the pump.fun create: a retried launch must not inherit an exit timer that already ran out.
+    L.launchedAt = now();
     transition(rec, "live", now(), { coinId: rec.id });
     save();
     log("live");
