@@ -33,10 +33,14 @@ const HOURS = 3;
 const TICKS = Math.round((HOURS * 3600) / TICK_S);
 const SUPPLY = 1e9;
 
+const env = (k: string, d: number) => (process.env[k] !== undefined ? Number(process.env[k]) : d);
 const CFG = {
-  band: 0.05, clipUsd: 25, minSol: 0.05, minEth: 0.003, keepClips: 4, margin: 0.1,
-  topupSol: 0.5, maxTopupSol: 3, topupEth: 0.02, maxTopupEth: 0.2, maxLossUsd: 150,
-  frontSol: 6.69, devBuySol: 6.52, frontEth: 0.1, makerCashEth: 0.01,
+  band: 0.05, clipUsd: env("CLIP_USD", 25), minSol: 0.05, minEth: 0.003, keepClips: 4, margin: 0.1,
+  topupSol: 0.5, maxTopupSol: 3, topupEth: 0.02, maxTopupEth: 0.2, maxLossUsd: env("MAX_LOSS_USD", 150),
+  // launch shape; override with FRONT_SOL / DEV_SOL / FRONT_ETH / SEED_ETH (ETH opening buy when seeded) / LOCK_PCT
+  frontSol: env("FRONT_SOL", 6.69), devBuySol: env("DEV_SOL", 6.52), frontEth: env("FRONT_ETH", 0.1), makerCashEth: 0.01,
+  seedEth: env("SEED_ETH", NaN), // NaN = whole ETH front minus maker cash
+  lockPct: env("LOCK_PCT", 0), // share of supply bought on BOTH curves before anything else and never sold
 };
 
 // ---- venues ---------------------------------------------------------------------------------------------------
@@ -135,8 +139,14 @@ function run(fdv: number, sc: Scenario, rule: Rule, seed: number): Result {
   const frontSol = rule.symmetric ? totalUsd / 2 / SOL_USD : CFG.frontSol;
   const frontEth = rule.symmetric ? totalUsd / 2 / ETH_USD : CFG.frontEth;
   const devSol = rule.symmetric ? (frontSol - 0.13) / 2 : CFG.devBuySol;
-  const seedEth = rule.symmetric ? (frontEth - CFG.makerCashEth) / 2 : rule.seedPons ? frontEth - CFG.makerCashEth : 0;
-  const m = { sol: frontSol - 0.04, eth: frontEth, tokPump: 0, tokPons: 0, escrowEth: 0 };
+  let lockTax = 0;
+  const seedEth = rule.symmetric ? (frontEth - CFG.makerCashEth) / 2 : rule.seedPons ? (Number.isNaN(CFG.seedEth) ? frontEth - CFG.makerCashEth : CFG.seedEth) : 0;
+  if (CFG.lockPct > 0) { // locked dev allocation: on the curve as a buy, off the table for everyone
+    const lock = CFG.lockPct * SUPPLY;
+    pump.buy((pump.q * lock) / (pump.t - lock) / (1 - 0.0125));
+    lockTax = pons.buy((pons.q * lock) / (pons.t - lock) / 0.97).tax;
+  }
+  const m = { sol: frontSol - 0.04, eth: frontEth, tokPump: 0, tokPons: 0, escrowEth: lockTax };
   const fronted = { sol: frontSol, eth: frontEth }, repaid = { sol: 0, eth: 0 }, topups = { sol: 0, eth: 0 };
 
   if (launch) {
@@ -160,7 +170,7 @@ function run(fdv: number, sc: Scenario, rule: Rule, seed: number): Result {
     repaid.sol = frontSol; repaid.eth = frontEth;
     m.sol = rule.symmetric ? frontSol - 0.13 - devSol : 0.13;
     m.eth = rule.symmetric ? frontEth - CFG.makerCashEth - seedEth : CFG.makerCashEth;
-    var out = { tokPump: Math.max(0, circulating(pump, true) - m.tokPump), tokPons: Math.max(0, circulating(pons, false) - m.tokPons) };
+    var out = { tokPump: Math.max(0, circulating(pump, true) - m.tokPump - CFG.lockPct * SUPPLY), tokPons: Math.max(0, circulating(pons, false) - m.tokPons - CFG.lockPct * SUPPLY) };
   }
   const entryPump = pump.price(), entryPons = pons.price();
 
@@ -248,7 +258,7 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const money = (n: number) => (Math.abs(n) >= 10_000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0));
 
 console.log(`3h at ${TICK_S}s, ${SEEDS} seeds. Graduation FDV: pump.fun $${money(PUMP_GRAD_FDV)}, Pons $${money(PONS_GRAD_FDV)}. SOL $${SOL_USD}, ETH $${ETH_USD}.`);
-console.log(`Cells: edge over HOLD in $ (value change minus top-ups) / % of ticks inside the 5% band. Front $${money(CFG.frontSol * SOL_USD + CFG.frontEth * ETH_USD)} per coin, clip $${CFG.clipUsd}.`);
+console.log(`Cells: edge over HOLD in $ (value change minus top-ups) / % of ticks inside the 5% band. Front $${money(CFG.frontSol * SOL_USD + CFG.frontEth * ETH_USD)} per coin (dev buy ${CFG.devBuySol} SOL, ETH seed ${Number.isNaN(CFG.seedEth) ? "front" : CFG.seedEth}), lock ${(CFG.lockPct * 100).toFixed(0)}%, clip $${CFG.clipUsd}.`);
 for (const fdv of FDVS) {
   const pv = fdv ? pumpAt(fdv) : freshPump(), ov = fdv ? ponsAt(fdv) : freshPons();
   const shallow = Math.min(pv.q * SOL_USD, ov.q * ETH_USD);
