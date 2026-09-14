@@ -71,7 +71,7 @@ export interface LaunchRecord {
   boostSol: number;
   devShareBps: number;
   devShareBpsFunded: number;
-  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
+  wallets: { pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
   payment: {
     chain: PaymentChain; unit: "SOL" | "ETH";
     /** Payment address on `chain`. */
@@ -106,7 +106,8 @@ export interface LaunchRecord {
 }
 
 /** Secret keys for one launch. Written 0600, never served. */
-export interface LaunchKeys { mint: number[]; solCreator: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string }
+/** solMaker is absent on records made before the creator/maker split; those coins keep trading from solCreator. */
+export interface LaunchKeys { mint: number[]; solCreator: number[]; solMaker?: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string }
 
 export interface NewRecordInput {
   id: string; token: TokenMeta; devWallet: string; chain: PaymentChain; wallets: LaunchRecord["wallets"]; quote: Quote; deadlineAt: number; now: number;
@@ -188,6 +189,7 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
     raw.refund = { amount: r?.amount ?? r?.sol ?? 0, paid: r?.paid ?? r?.paidSol ?? 0, txs: r?.txs ?? [] };
     const w = raw.wallets as Record<string, unknown>;
     w.evmPayment ??= "";
+    w.solMaker ??= w.solCreator;
     const q = raw.quote as Record<string, unknown>;
     q.depositEth ??= 0;
   }

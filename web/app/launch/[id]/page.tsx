@@ -227,7 +227,8 @@ export default function LaunchPage() {
               </>
             )}
             <div className="kv"><span>Your wallet · {chainName}</span><b className="mono">{short(l.devWallet, 6)}</b></div>
-            <div className="kv"><span>Maker · Solana</span><b className="mono">{short(l.wallets.solCreator, 6)}</b></div>
+            <div className="kv"><span>Maker · Solana</span><b className="mono">{short(l.wallets.solMaker || l.wallets.solCreator, 6)}</b></div>
+            <div className="kv"><span>Creator · Solana</span><b className="mono">{short(l.wallets.solCreator, 6)}</b></div>
             <div className="kv"><span>Maker · Robinhood</span><b className="mono">{short(l.wallets.evmMaker, 6)}</b></div>
           </div>
           <div className="box r" style={{ "--i": 3 } as React.CSSProperties}>

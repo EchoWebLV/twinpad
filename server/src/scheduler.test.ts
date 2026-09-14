@@ -7,7 +7,7 @@ const quote = { depositSol: 0.5, depositEth: 0.02, frontSol: 1, frontEth: 0.03, 
 const mk = (id: string, status: LaunchRecord["status"], createdAt = 0) => {
   const r = newRecord({ id, now: createdAt, deadlineAt: 1000, devWallet: "D", chain: "sol" as const, quote,
     token: { name: "A", symbol: "A", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" },
-    wallets: { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "P", evmPayment: "0xP" } });
+    wallets: { pumpMint: "M", solCreator: "C", solMaker: "K", evmLauncher: "0xL", evmMaker: "0xK", payment: "P", evmPayment: "0xP" } });
   const path: Record<string, LaunchRecord["status"][]> = { paid: ["paid"], approved: ["paid", "approved"], launching: ["paid", "approved", "launching"], live: ["paid", "approved", "launching", "live"] };
   for (const s of path[status] ?? []) transition(r, s, createdAt);
   return r;

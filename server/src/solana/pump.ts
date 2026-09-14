@@ -152,6 +152,51 @@ export async function tradeLocal(body: TradeLocalBody): Promise<VersionedTransac
   return VersionedTransaction.deserialize(bytes);
 }
 
+/** Several unsigned transactions for one Jito bundle (up to 5). The first body's priorityFee becomes the bundle tip. */
+export async function tradeLocalBundle(bodies: TradeLocalBody[]): Promise<VersionedTransaction[]> {
+  const res = await fetch(PUMPPORTAL_TRADE_LOCAL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bodies),
+  });
+  if (res.status !== 200) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`PumpPortal trade-local bundle ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const encoded = (await res.json()) as string[];
+  if (!Array.isArray(encoded) || encoded.length !== bodies.length) throw new Error(`PumpPortal returned ${encoded?.length} transactions for ${bodies.length}`);
+  return encoded.map((t) => VersionedTransaction.deserialize(bs58.decode(t)));
+}
+
+/** Submit signed transactions as one atomic Jito bundle. Returns the bundle id; landing is checked by signature. */
+export async function sendBundle(blockEngine: string, txs: VersionedTransaction[]): Promise<string> {
+  const res = await fetch(blockEngine, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "sendBundle", params: [txs.map((t) => bs58.encode(t.serialize()))] }),
+  });
+  const j = (await res.json().catch(() => null)) as { result?: string; error?: { message?: string } } | null;
+  if (!res.ok || !j?.result) throw new Error(`jito sendBundle ${res.status}: ${j?.error?.message ?? "no result"}`);
+  return j.result;
+}
+
+/** Poll until `sig` is confirmed (or the wait runs out). Returns true when it landed. */
+export async function waitForSignature(conn: Connection, sig: string, ms: number): Promise<boolean> {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    const st = await conn.getSignatureStatuses([sig], { searchTransactionHistory: true });
+    const v = st.value[0];
+    if (v?.err) throw new Error(`transaction ${sig} failed: ${JSON.stringify(v.err)}`);
+    if (v && (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized")) return true;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
+export function signatureOf(tx: VersionedTransaction): string {
+  return bs58.encode(tx.signatures[0]);
+}
+
 export async function sendSigned(conn: Connection, tx: VersionedTransaction): Promise<string> {
   const sig = await conn.sendTransaction(tx, { skipPreflight: false, maxRetries: 3 });
   const latest = await conn.getLatestBlockhash("confirmed");

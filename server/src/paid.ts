@@ -89,12 +89,13 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
 
   const mint = Keypair.generate();
   const solCreator = Keypair.generate();
+  const solMaker = Keypair.generate();
   const payment = Keypair.generate();
   const evmLauncherKey = generatePrivateKey();
   const evmMakerKey = generatePrivateKey();
   const evmPaymentKey = generatePrivateKey();
   d.registry.saveKeys(id, {
-    mint: Array.from(mint.secretKey), solCreator: Array.from(solCreator.secretKey), payment: Array.from(payment.secretKey),
+    mint: Array.from(mint.secretKey), solCreator: Array.from(solCreator.secretKey), solMaker: Array.from(solMaker.secretKey), payment: Array.from(payment.secretKey),
     evmLauncher: evmLauncherKey, evmMaker: evmMakerKey, evmPayment: evmPaymentKey,
   });
 
@@ -114,6 +115,7 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
     wallets: {
       pumpMint: mint.publicKey.toBase58(),
       solCreator: solCreator.publicKey.toBase58(),
+      solMaker: solMaker.publicKey.toBase58(),
       evmLauncher: privateKeyToAccount(evmLauncherKey).address,
       evmMaker: privateKeyToAccount(evmMakerKey).address,
       payment: payment.publicKey.toBase58(),

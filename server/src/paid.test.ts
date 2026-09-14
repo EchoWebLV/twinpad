@@ -65,6 +65,7 @@ test("createLaunch writes record, keys and image", async () => {
   assert.equal(rec.token.website, `https://pad.example/coin/${rec.id}`);
   assert.ok(rec.wallets.pumpMint.length >= 32);
   assert.ok(rec.wallets.evmMaker.startsWith("0x"));
+  assert.notEqual(rec.wallets.solMaker, rec.wallets.solCreator);
   const keys = d.registry.keys(rec.id);
   assert.equal(keys.mint.length, 64);
   assert.ok(fs.existsSync(d.registry.imagePath(rec.id)));

@@ -28,7 +28,7 @@ export interface Launch {
   token: { name: string; symbol: string; description: string; imageCid: string; twitter: string; website: string; telegram: string };
   devWallet: string;
   boostSol: number;
-  wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
+  wallets: { pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
   payment: {
     chain: "sol" | "eth"; unit: "SOL" | "ETH"; address: string; required: number; received: number; paidAt: number | null; deadlineAt: number;
     txs: { tx: string; amount: number; late: boolean }[]; foreign: { tx: string; amount: number }[]; claimed: string[];

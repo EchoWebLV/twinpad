@@ -39,14 +39,15 @@ export async function closeCoin(ctx: RetireCtx, rec: LaunchRecord, reason: strin
   try {
     const o = { slippagePct: ctx.cfg.solana.slippagePct, priorityFeeSol: ctx.cfg.solana.priorityFeeSol };
     const creator = Keypair.fromSecretKey(Uint8Array.from(keys.solCreator));
+    const solMaker = keys.solMaker ? Keypair.fromSecretKey(Uint8Array.from(keys.solMaker)) : creator;
     const payment = Keypair.fromSecretKey(Uint8Array.from(keys.payment));
 
-    // ---- Solana: sell tokens, collect creator fees, sweep
+    // ---- Solana: sell the maker's tokens, collect creator fees, sweep every wallet
     if (rec.launch.pumpMint) {
       const mint = new PublicKey(rec.launch.pumpMint);
-      const bal = await solanaBalances(ctx.conn, creator.publicKey, mint);
+      const bal = await solanaBalances(ctx.conn, solMaker.publicKey, mint);
       if (bal.tokens >= 1) {
-        const sig = await solanaSell(ctx.conn, creator, mint, "100%", o);
+        const sig = await solanaSell(ctx.conn, solMaker, mint, "100%", o);
         R.sold.pumpTokens += bal.tokens;
         R.sold.txs.push(sig);
         step(rec, "close_sell_pump", now(), { tokens: bal.tokens, tx: sig });
@@ -60,7 +61,9 @@ export async function closeCoin(ctx: RetireCtx, rec: LaunchRecord, reason: strin
         log(`collected ${fees.sol} SOL creator fees ${fees.sig}`);
       }
     }
-    for (const [name, kp] of [["solCreator", creator], ["payment", payment]] as const) {
+    const solWallets: Array<readonly [string, Keypair]> = [["solCreator", creator], ["payment", payment]];
+    if (solMaker !== creator) solWallets.unshift(["solMaker", solMaker]);
+    for (const [name, kp] of solWallets) {
       const swept = await sweepSol(ctx.conn, kp, ctx.pool.sol.publicKey);
       if (swept) {
         R.swept.sol += swept.sol;
@@ -203,7 +206,7 @@ export class Retirer {
     }
     return measureActivity(this.ctx.conn, this.ctx.pub, {
       pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!,
-      ours: { solana: [rec.wallets.solCreator, this.ctx.pool.sol.publicKey.toBase58()], evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, this.ctx.pool.evmAddress] },
+      ours: { solana: [rec.wallets.solCreator, rec.wallets.solMaker, this.ctx.pool.sol.publicKey.toBase58()].filter(Boolean), evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, this.ctx.pool.evmAddress] },
       ponsFromBlock: from, price: { pump: c.pump.price, pons: c.pons.price },
     });
   }

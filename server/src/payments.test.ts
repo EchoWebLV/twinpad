@@ -7,12 +7,12 @@ const quote = { depositSol: 0.5, depositEth: 0.02, frontSol: 1, frontEth: 0.03, 
 const rec = () => newRecord({
   id: "a-0000", now: 0, deadlineAt: 1000, devWallet: "DEV", chain: "sol" as const, quote,
   token: { name: "A", symbol: "A", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" },
-  wallets: { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "PAY", evmPayment: "0xP" },
+  wallets: { pumpMint: "M", solCreator: "C", solMaker: "K", evmLauncher: "0xL", evmMaker: "0xK", payment: "PAY", evmPayment: "0xP" },
 });
 const ethRec = () => newRecord({
   id: "b-0000", now: 0, deadlineAt: 1000, devWallet: "0xAbC0000000000000000000000000000000000001", chain: "eth" as const, quote,
   token: { name: "B", symbol: "B", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" },
-  wallets: { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "PAY", evmPayment: "0xP" },
+  wallets: { pumpMint: "M", solCreator: "C", solMaker: "K", evmLauncher: "0xL", evmMaker: "0xK", payment: "PAY", evmPayment: "0xP" },
 });
 
 test("exact payment from the dev wallet marks paid", () => {

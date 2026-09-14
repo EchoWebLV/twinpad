@@ -56,6 +56,11 @@ export const config = {
     /** Deployers may add up to this much SOL to the dev buy on top of the deposit. 0 disables boosts. */
     maxBoostSol: num("MAX_BOOST_SOL", 20),
     solGasBudget: num("SOL_GAS_BUDGET", 0.13),
+    /** Out of the gas budget: what the pump.fun creator wallet gets (create rent + bundle tip). The rest stays with the maker as gas. */
+    solCreatorSol: num("SOL_CREATOR_SOL", 0.04),
+    /** Jito tip for the create + opening-buy bundle (the creator never holds tokens, so pump.fun shows no dev buys or sells). */
+    jitoTipSol: num("JITO_TIP_SOL", 0.001),
+    jitoBlockEngine: env("JITO_BLOCK_ENGINE") || "https://mainnet.block-engine.jito.wtf/api/v1/bundles",
     evmGasLauncher: num("EVM_GAS_LAUNCHER", 0.012),
     evmMakerCash: num("EVM_MAKER_CASH", 0.01),
     autoApprove: bool("AUTO_APPROVE", false),

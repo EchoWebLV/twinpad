@@ -11,7 +11,7 @@ const quote: Quote = {
   makerCashEth: 0.01, openingFdv: 100, landing: { pump: 100, pons: 100 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 100, ETH: 2500 },
 };
 const token = { name: "Doggo", symbol: "DOGGO", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" };
-const wallets = { pumpMint: "M", solCreator: "C", evmLauncher: "0xL", evmMaker: "0xK", payment: "P", evmPayment: "0xP" };
+const wallets = { pumpMint: "M", solCreator: "C", solMaker: "K", evmLauncher: "0xL", evmMaker: "0xK", payment: "P", evmPayment: "0xP" };
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "reg-"));
