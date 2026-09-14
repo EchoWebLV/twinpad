@@ -89,5 +89,6 @@ test("boostSol: bounded, SOL deposits only, rides in the deposit and the pool fr
   assert.equal(rec.front.sol, 3.5); // pool part 1 + boost 2.5 go to the creator wallet
   assert.equal(rec.quote.devBuySol, 3.37);
   assert.equal(rec.front.topupEth, 0);
+  assert.equal(rec.front.topupSol, 0);
   assert.equal(rec.front.retiredAt, null);
 });

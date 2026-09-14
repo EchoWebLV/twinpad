@@ -174,15 +174,15 @@ export class Maker {
     const reason = `gap ${(g.gap * 100).toFixed(2)}% > band ${(this.cfg.maker.band * 100).toFixed(1)}%, ${g.expensive} expensive`;
 
     const cheap = g.expensive === "pump" ? "pons" : "pump";
-    // 1) sell on the expensive side
+    // 1) sell on the expensive side: the scaled clip, or what is left in inventory (not under a quarter of the base clip)
     if (g.expensive === "pump") {
-      const tokens = clipUsd / st.pump.price;
-      if (inv.solana.tokens >= tokens) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
-      else this.skip("pump", "sell", reason, `inventory ${inv.solana.tokens.toFixed(0)} < ${tokens.toFixed(0)}`);
+      const tokens = sizeSell(clipUsd / st.pump.price, inv.solana.tokens, this.cfg.maker.maxClipUsd / st.pump.price);
+      if (tokens > 0) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
+      else this.skip("pump", "sell", reason, `inventory ${inv.solana.tokens.toFixed(0)} tokens`);
     } else {
-      const tokens = clipUsd / st.pons.price;
-      if (inv.evm.tokens >= tokens) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
-      else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} < ${tokens.toFixed(0)}`);
+      const tokens = sizeSell(clipUsd / st.pons.price, inv.evm.tokens, this.cfg.maker.maxClipUsd / st.pons.price);
+      if (tokens > 0) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
+      else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} tokens`);
     }
     // 2) buy on the cheap side
     // A scaled clip the wallet cannot fund above its floor shrinks to what it can, never below a quarter of the base clip.
@@ -237,6 +237,12 @@ export class Maker {
  * How much quote a buy may spend: the wanted clip, shrunk to what the wallet holds above its floor.
  * Anything under a quarter of the base clip is not worth the gas and returns 0 (the caller skips).
  */
+/** How many tokens a sell may move: the wanted clip, or the whole inventory when that is smaller but still worth the gas. */
+export function sizeSell(want: number, inventory: number, baseClip: number): number {
+  const can = Math.min(want, inventory);
+  return can >= baseClip / 4 ? can : 0;
+}
+
 export function sizeBuy(want: number, balance: number, floor: number, baseClip: number): number {
   const can = Math.min(want, balance - floor);
   return can >= baseClip / 4 ? can : 0;

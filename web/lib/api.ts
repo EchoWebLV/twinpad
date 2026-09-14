@@ -35,7 +35,7 @@ export interface Launch {
     txs: { tx: string; amount: number; late: boolean }[]; foreign: { tx: string; amount: number }[]; claimed: string[];
   };
   approval: { status: string; at: number | null; note: string | null; auto: boolean };
-  front: { sol: number; eth: number; at: number | null; repaidSol: number; repaidEth: number; topupEth: number; retiredAt: number | null };
+  front: { sol: number; eth: number; at: number | null; repaidSol: number; repaidEth: number; topupEth: number; topupSol: number; retiredAt: number | null };
   launch: { steps: Step[]; pumpMint: string | null; ponsToken: string | null; error: string | null; retries: number };
   refund: { amount: number; paid: number; txs: string[] };
   retire: {

@@ -88,6 +88,8 @@ export const config = {
     keepClips: num("RECOVER_KEEP_CLIPS", 4),
     topupEth: num("TOPUP_ETH", 0.02),
     maxTopupEthPerCoin: num("MAX_TOPUP_ETH_PER_COIN", 0.2),
+    topupSol: num("TOPUP_SOL", 0.5),
+    maxTopupSolPerCoin: num("MAX_TOPUP_SOL_PER_COIN", 3),
   },
   /** Loss budgets in USD (fronted value − current inventory value). Coin: halt that maker. Pool: halt every maker and stop approving. */
   guard: {

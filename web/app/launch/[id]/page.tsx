@@ -139,7 +139,7 @@ export default function LaunchPage() {
               </div>
               <p className="mute" style={{ marginTop: 12 }}>
                 Front recovered: {l.front.repaidSol.toFixed(3)} of {l.front.sol} SOL · {l.front.repaidEth.toFixed(4)} of {l.front.eth} ETH
-                {l.front.topupEth > 0 && <> (incl. {l.front.topupEth} ETH topped up)</>}
+                {(l.front.topupEth > 0 || l.front.topupSol > 0) && <> (incl. {[l.front.topupSol > 0 && `${l.front.topupSol} SOL`, l.front.topupEth > 0 && `${l.front.topupEth} ETH`].filter(Boolean).join(" + ")} topped up)</>}
                 {l.front.retiredAt && <> · <span className="y">front retired</span></>}
               </p>
               {R && (

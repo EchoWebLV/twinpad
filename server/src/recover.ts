@@ -13,7 +13,7 @@ export interface RecoverCtx { cfg: Config; registry: Registry; pool: Pool; conn:
 /**
  * Front recovery, run inside the maker's tick (same wallets, so no nonce races):
  * 1. quote above the keep level (MAKER_MIN_* + RECOVER_KEEP_CLIPS clips) goes back to the pool and counts as repaid;
- * 2. when the maker wants to buy on Pons but cannot fund a clip, the pool tops its ETH up (bounded per coin);
+ * 2. when the maker wants to buy on one side but cannot fund a clip there, the pool tops that quote up (bounded per coin);
  * 3. once repaid ≥ fronted on both chains the front is retired: milestone step + alert, sweeps keep going.
  */
 export class Recovery {
@@ -62,8 +62,8 @@ export class Recovery {
     // 2. ETH follows Pons demand: the maker wants to buy there (pump expensive) but cannot fund a clip
     const g = c.gap();
     // the maker scales its clip up to 3x outside the band, so starvation is judged against the clip it actually wants
-    const clipEth = (cfg.maker.maxClipUsd * (g ? Math.min(3, g.gap / c.band) : 1)) / c.fx.ETH;
-    const starved = g !== null && g.gap > c.band && g.expensive === "pump" && inv.evm.eth - clipEth < cfg.maker.minEth;
+    const clipUsd = cfg.maker.maxClipUsd * (g ? Math.min(3, g.gap / c.band) : 1);
+    const starved = g !== null && g.gap > c.band && g.expensive === "pump" && inv.evm.eth - clipUsd / c.fx.ETH < cfg.maker.minEth;
     if (starved && rec.front.topupEth + cfg.recover.topupEth <= cfg.recover.maxTopupEthPerCoin + 1e-12) {
       const can = await this.ctx.pool.canFront(0, cfg.recover.topupEth);
       if (can.ok) {
@@ -75,6 +75,20 @@ export class Recovery {
         save();
         log(`topped the maker up with ${cfg.recover.topupEth} ETH (fronted now ${rec.front.eth}) ${hash}`);
       } else log(`maker starved of ETH but the pool is at its floor (${can.balances.eth.toFixed(4)} ETH)`);
+    }
+    // same on Solana: Pons expensive means buying pump, which needs SOL the pump sells have not raised yet
+    const starvedSol = g !== null && g.gap > c.band && g.expensive === "pons" && inv.solana.sol - clipUsd / c.fx.SOL < cfg.maker.minSol;
+    if (starvedSol && rec.front.topupSol + cfg.recover.topupSol <= cfg.recover.maxTopupSolPerCoin + 1e-9) {
+      const can = await this.ctx.pool.canFront(cfg.recover.topupSol, 0);
+      if (can.ok) {
+        const sig = await this.ctx.pool.transferSol(w.sol.publicKey, cfg.recover.topupSol);
+        rec.front.sol = round(rec.front.sol + cfg.recover.topupSol, 9);
+        rec.front.topupSol = round(rec.front.topupSol + cfg.recover.topupSol, 9);
+        c.front.sol = rec.front.sol;
+        step(rec, "front_topup_sol", now, { sol: cfg.recover.topupSol, tx: sig, fronted: rec.front.sol, topups: rec.front.topupSol });
+        save();
+        log(`topped the maker up with ${cfg.recover.topupSol} SOL (fronted now ${rec.front.sol}) ${sig}`);
+      } else log(`maker starved of SOL but the pool is at its floor (${can.balances.sol.toFixed(4)} SOL)`);
     }
 
     // 3. milestone
