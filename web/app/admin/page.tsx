@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getJson, postJson, type CoinSummary, type Launch, type PoolSummary } from "../../lib/api";
+import { getJson, img, postJson, usd, type CoinSummary, type Launch, type PoolSummary } from "../../lib/api";
+import { Img, Nav, Sh, Status, ago, short } from "../components/ui";
 
 export default function Admin() {
   const [token, setToken] = useState("");
@@ -14,9 +15,7 @@ export default function Admin() {
   const refresh = async () => {
     try {
       const [l, c, p] = await Promise.all([getJson<Launch[]>("/api/paid"), getJson<CoinSummary[]>("/api/coins"), getJson<PoolSummary>("/api/pool")]);
-      setLaunches(l);
-      setCoins(c);
-      setPool(p);
+      setLaunches(l); setCoins(c); setPool(p);
     } catch (e) {
       setMsg((e as Error).message);
     }
@@ -29,71 +28,92 @@ export default function Admin() {
   const act = async (path: string, body: unknown = {}) => {
     try {
       await postJson(path, body, token);
-      setMsg(`ok ${path}`);
+      setMsg(`ok · ${path}`);
       await refresh();
     } catch (e) {
       setMsg((e as Error).message);
     }
+    setTimeout(() => setMsg(null), 4000);
   };
   const saveToken = (t: string) => {
     setToken(t);
     try { localStorage.setItem("adminToken", t); } catch { /* private mode */ }
   };
+  const solOk = pool ? pool.solana.balance >= pool.solana.floor : null;
+  const ethOk = pool ? pool.robinhood.balance >= pool.robinhood.floor : null;
   return (
-    <main>
-      <header><a href="/" className="back">← all coins</a><div><h1>Admin</h1></div></header>
-      <div className="card form">
-        <label>Admin token<input type="password" value={token} onChange={(e) => saveToken(e.target.value)} /></label>
-        {msg && <p className="sub">{msg}</p>}
+    <div className="shell">
+      <Nav />
+      <div className="ph-row r">
+        <div><h1>Admin</h1><p className="desc">Pool balances, approvals, retries and maker controls. Actions need the admin token.</p></div>
+        <div className="form" style={{ marginLeft: "auto", minWidth: 280 }}>
+          <label style={{ margin: 0 }}>Admin token<input type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => saveToken(e.target.value)} /></label>
+        </div>
       </div>
+
       {pool && (
-        <div className="card">
-          <h2>Pool</h2>
-          <div className="row"><span>Solana <span className="ca">{pool.solana.address}</span></span><b>{pool.solana.balance.toFixed(3)} SOL (floor {pool.solana.floor})</b></div>
-          <div className="row"><span>Robinhood <span className="ca">{pool.robinhood.address}</span></span><b>{pool.robinhood.balance.toFixed(4)} ETH (floor {pool.robinhood.floor})</b></div>
-          <div className="row"><span>outstanding</span><b>{pool.outstanding.sol.toFixed(3)} SOL · {pool.outstanding.eth.toFixed(4)} ETH</b></div>
-          <div className="row"><span>live / launching / queued / open</span><b>{pool.counts.live} / {pool.counts.launching} / {pool.counts.queued} / {pool.counts.open}</b></div>
+        <div className="strip r" style={{ "--i": 1 } as React.CSSProperties}>
+          <div className="cell"><span>Pool · Solana</span><b className={solOk ? "" : "red"}>{pool.solana.balance.toFixed(3)} SOL</b><small>floor {pool.solana.floor} · {short(pool.solana.address, 5)}</small></div>
+          <div className="cell"><span>Pool · Robinhood</span><b className={ethOk ? "" : "red"}>{pool.robinhood.balance.toFixed(4)} ETH</b><small>floor {pool.robinhood.floor} · {short(pool.robinhood.address, 5)}</small></div>
+          <div className="cell"><span>Outstanding fronts</span><b>{pool.outstanding.sol.toFixed(2)} SOL</b><small>{pool.outstanding.eth.toFixed(4)} ETH</small></div>
+          <div className="cell"><span>Live / launching / queued</span><b>{pool.counts.live} / {pool.counts.launching} / {pool.counts.queued}</b><small>{pool.counts.open} open</small></div>
         </div>
       )}
-      <div className="card">
-        <h2>Launches</h2>
-        <table>
-          <thead><tr><th>id</th><th>status</th><th>paid</th><th>error</th><th>actions</th></tr></thead>
-          <tbody>
-            {launches.map((l) => (
-              <tr key={l.id}>
-                <td><a href={`/launch/${l.id}`}>{l.id}</a></td>
-                <td>{l.status}</td>
-                <td>{l.payment.receivedSol}/{l.payment.requiredSol}</td>
-                <td className="err">{l.launch.error ?? ""}</td>
-                <td>
-                  {l.status === "paid" && <button onClick={() => act(`/api/admin/paid/${l.id}/approve`)}>approve</button>}
-                  {["awaiting_deposit", "paid", "approved"].includes(l.status) && <button onClick={() => act(`/api/admin/paid/${l.id}/reject`, { note: prompt("note") ?? null })}>reject</button>}
-                  {l.status === "failed" && <button onClick={() => act(`/api/admin/paid/${l.id}/retry`)}>retry</button>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="card">
-        <h2>Makers</h2>
-        <table>
-          <thead><tr><th>coin</th><th>maker</th><th>actions</th></tr></thead>
-          <tbody>
-            {coins.map((c) => (
-              <tr key={c.id}>
-                <td><a href={`/coin/${c.id}`}>{c.id}</a></td>
-                <td>{c.maker}</td>
-                <td>
-                  <button onClick={() => act(`/api/admin/coins/${c.id}/maker/halt`)}>halt</button>
-                  <button onClick={() => act(`/api/admin/coins/${c.id}/maker/resume`)}>resume</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </main>
+
+      <section className="section r" style={{ "--i": 2 } as React.CSSProperties}>
+        <Sh n="01" title="Launches" sub={`${launches.length} total`} />
+        {launches.length === 0 ? <div className="empty"><b>No launches</b></div> : (
+          <div className="box" style={{ padding: "6px 16px 10px" }}>
+            <table className="tbl">
+              <thead><tr><th>coin</th><th>status</th><th>deposit</th><th>opening</th><th>created</th><th>note / error</th><th style={{ textAlign: "right" }}>actions</th></tr></thead>
+              <tbody>
+                {launches.map((l) => (
+                  <tr key={l.id}>
+                    <td><a href={`/launch/${l.id}`} style={{ display: "flex", alignItems: "center", gap: 12 }}><Img src={img(l.token.imageCid)} size={28} /><b>{l.token.name}</b><span className="mute">${l.token.symbol}</span><span className="mono dim">{l.id}</span></a></td>
+                    <td><Status status={l.status} /></td>
+                    <td><b>{l.payment.receivedSol}</b> / {l.payment.requiredSol} SOL</td>
+                    <td><b>{usd(l.quote.openingFdv)}</b></td>
+                    <td className="mono">{ago(l.createdAt)}</td>
+                    <td className={l.launch.error ? "err" : ""} style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.launch.error ?? l.approval.note ?? ""}>{l.launch.error ?? l.approval.note ?? ""}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {l.status === "paid" && <button className="btn y sm" onClick={() => act(`/api/admin/paid/${l.id}/approve`)}>approve</button>}{" "}
+                      {["awaiting_deposit", "paid", "approved"].includes(l.status) && <button className="btn red sm" onClick={() => act(`/api/admin/paid/${l.id}/reject`, { note: prompt("note") ?? null })}>reject</button>}{" "}
+                      {l.status === "failed" && <button className="btn sm" onClick={() => act(`/api/admin/paid/${l.id}/retry`)}>retry</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="section r" style={{ "--i": 3 } as React.CSSProperties}>
+        <Sh n="02" title="Makers" sub={`${coins.length} live`} />
+        {coins.length === 0 ? <div className="empty"><b>No live makers</b></div> : (
+          <div className="box" style={{ padding: "6px 16px 10px" }}>
+            <table className="tbl">
+              <thead><tr><th>coin</th><th>pump.fun</th><th>Pons</th><th>gap</th><th>maker</th><th style={{ textAlign: "right" }}>actions</th></tr></thead>
+              <tbody>
+                {coins.map((c) => (
+                  <tr key={c.id}>
+                    <td><a href={`/coin/${c.id}`} style={{ display: "flex", alignItems: "center", gap: 12 }}><Img src={c.image} size={28} /><b>{c.name}</b><span className="mute">${c.symbol}</span></a></td>
+                    <td><b>{c.pumpFdv ? usd(c.pumpFdv) : "—"}</b></td>
+                    <td><b className="y">{c.ponsFdv ? usd(c.ponsFdv) : "—"}</b></td>
+                    <td className={c.inBand == null ? "" : c.inBand ? "y" : "red"}>{c.gap == null ? "—" : `${(c.gap * 100).toFixed(2)}%`}</td>
+                    <td><span className={`st ${c.maker === "running" ? "live" : c.maker === "halted" ? "bad" : "off"}`}>{c.maker}</span></td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button className="btn red sm" onClick={() => act(`/api/admin/coins/${c.id}/maker/halt`)}>halt</button>{" "}
+                      <button className="btn sm" onClick={() => act(`/api/admin/coins/${c.id}/maker/resume`)}>resume</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {msg && <div className="toast">{msg}</div>}
+    </div>
   );
 }

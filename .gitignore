@@ -9,3 +9,4 @@ server/data/
 *.keypair.json
 mint-*.json
 .DS_Store
+*.tsbuildinfo
