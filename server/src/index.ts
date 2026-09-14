@@ -116,7 +116,6 @@ async function main() {
     await runLaunch({ cfg: config, registry, pool, conn, pub, fx }, rec);
     if (rec.status === "live") mount(rec);
   };
-  for (const rec of registry.list({ status: ["launching"] })) await launch(rec); // resume after a crash
   const chains = { conn, pub, rpcUrl: config.evm.rpcUrl };
   const watcher = new PaymentWatcher(chains, registry);
   watcher.start();
@@ -325,6 +324,16 @@ async function main() {
   }), { admin: true });
 
   serve(router, config.server.port, config.server.corsOrigin);
+
+  // Resume launches a restart interrupted — only once the API is listening, so a deploy never takes the site
+  // offline for as long as a launch takes to replay (Railway answers 502 until the port is bound).
+  for (const rec of registry.list({ status: ["launching"] })) {
+    try {
+      await launch(rec);
+    } catch (e) {
+      console.error(`[launch ${rec.id}] resume failed: ${(e as Error).message}`);
+    }
+  }
 }
 
 main().catch((e) => {
