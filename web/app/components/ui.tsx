@@ -1,7 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getJson } from "../../lib/api";
+
+/** Twinpad mark: two coins, one price. The lens they share is the band the market maker holds. */
+export function Mark({ size = 22 }: { size?: number }) {
+  const lens = useId();
+  return (
+    <svg className="mark" viewBox="0 0 32 24" width={(size * 32) / 24} height={size} aria-hidden="true">
+      <defs><clipPath id={lens}><circle cx="11" cy="12" r="9" /></clipPath></defs>
+      <circle cx="11" cy="12" r="9" fill="var(--ink)" />
+      <g clipPath={`url(#${lens})`}><circle className="mv" cx="21" cy="12" r="9" fill="var(--y)" /></g>
+      <circle className="mv" cx="21" cy="12" r="8" fill="none" stroke="var(--ink)" strokeWidth="2" />
+    </svg>
+  );
+}
 
 export function Nav() {
   const path = usePathname();
@@ -17,7 +30,7 @@ export function Nav() {
     <>
       <div className="rail">Twinpad <b>—</b> pump.fun × Pons v2 <b>—</b> Solana / Robinhood Chain 4663</div>
       <nav className="nav">
-        <a className="brand" href="/"><span className="mark"><i /><i /></span>Twinpad</a>
+        <a className="brand" href="/"><Mark />Twinpad</a>
         <div className="links">
           <a className={on("/")} href="/">Coins</a>
           <a className={on("/launch")} href="/launch">Launch</a>
