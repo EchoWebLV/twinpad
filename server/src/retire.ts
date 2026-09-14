@@ -227,14 +227,16 @@ export class Retirer {
       }
     }
     const v = decide(R, a, now);
-    if (v === "wait" || v === "keep") return;
+    if (v === "wait") return;
     if (!R.evaluated && a) {
+      // record the verdict before acting on it: a "keep" that is not written down would be re-measured every tick
       R.evaluated = { at: now, outsideBuyers: a.outsideBuyers, outsideUsd: Math.round(a.outsideUsd * 100) / 100, verdict: v === "finish" ? "selldown" : v };
       step(rec, "exit_evaluated", now, { ...R.evaluated, pump: a.pump, pons: a.pons });
       if (v === "selldown") R.selldownUntil = now + R.policy.selldownMin * 60_000;
       this.ctx.registry.save(rec);
       console.log(`[retire ${rec.id}] ${v}: ${a.outsideBuyers} outside holders, $${a.outsideUsd.toFixed(0)} held (bar ${R.policy.minBuyers} / $${R.policy.minUsd})`);
     }
+    if (v === "keep") return;
     if (v === "selldown") {
       if (c.maker.mode !== "selldown") {
         this.makers.setMode(rec.id, "selldown");
