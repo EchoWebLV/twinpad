@@ -2,10 +2,12 @@
 /**
  * Seed a Uniswap v4 ETH/LSTP pool on Robinhood Chain at the current pump.fun price.
  *
- *   pnpm seed                 dry run: price, pool key, amounts, calldata, simulation
- *   pnpm seed -- --confirm    approve (Permit2), initialize the pool, mint full-range liquidity
+ *   pnpm seed -- --lstp 50000              dry run: price, pool key, amounts, calldata, simulation
+ *   pnpm seed -- --lstp 50000 --confirm    approve (Permit2), initialize the pool, mint the liquidity
  *
- * Options (env or flags): --rpc URL, --token 0x.., --eth 0.01, --fee 10000, --price-eth <eth per token>, --swap-test <eth> (buy via UniversalRouter, spends),
+ * Two shapes: --lstp <whole tokens> mints a ONE-SIDED position (LSTP only, zero ETH beyond gas) from the current price upward,
+ * so the pool only sells LSTP as buyers push the price up; --eth <eth> mints a balanced full-range position (ETH + matching LSTP).
+ * Options (env or flags): --rpc URL, --token 0x.., --fee 10000, --price-eth <eth per token>, --swap-test <eth> (buy via UniversalRouter, spends),
  * --mint <solana mint> (pump.fun price source), --key-file path (evm deployer json from `cast wallet new --json`).
  * Nothing is sent without --confirm.
  */
@@ -66,6 +68,7 @@ const posmAbi = parseAbi([
 const stateViewAbi = parseAbi([
   'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
   'function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)',
+  'function getTickLiquidity(bytes32 poolId, int24 tick) view returns (uint128 liquidityGross, int128 liquidityNet)',
 ])
 const quoterAbi = parseAbi([
   'function quoteExactInputSingle(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey, bool zeroForOne, uint128 exactAmount, bytes hookData) params) returns (uint256 amountOut, uint256 gasEstimate)',
@@ -107,11 +110,21 @@ export function fullRangeTicks(tickSpacing: number) {
   const hi = Math.floor(TickMath.MAX_TICK / tickSpacing) * tickSpacing
   return { tickLower: lo, tickUpper: hi }
 }
+export function lstpOnlyTicks(curTick: number, tickSpacing: number) {
+  // LSTP is currency1: a range entirely at or below the current tick holds only LSTP, and ETH buys (price of LSTP rising,
+  // tick falling) walk down into it. tickUpper is the current tick rounded down to the spacing.
+  const tickLower = Math.ceil(TickMath.MIN_TICK / tickSpacing) * tickSpacing
+  const tickUpper = Math.floor(curTick / tickSpacing) * tickSpacing
+  if (tickUpper <= tickLower) throw new Error(`price too low for a one-sided range (tick ${curTick})`)
+  return { tickLower, tickUpper }
+}
 export function liquidityAndAmounts(sqrtP: bigint, tickLower: number, tickUpper: number, ethWei: bigint, tokenWei: bigint) {
-  const sa = TickMath.getSqrtRatioAtTick(tickLower), sb = TickMath.getSqrtRatioAtTick(tickUpper)
-  const L = maxLiquidityForAmounts(J(sqrtP), sa, sb, J(ethWei), J(tokenWei), true)
-  const amount0 = B(SqrtPriceMath.getAmount0Delta(J(sqrtP), sb, L, true))
-  const amount1 = B(SqrtPriceMath.getAmount1Delta(sa, J(sqrtP), L, true))
+  const sa = TickMath.getSqrtRatioAtTick(tickLower), sb = TickMath.getSqrtRatioAtTick(tickUpper), p = J(sqrtP)
+  const L = maxLiquidityForAmounts(p, sa, sb, J(ethWei), J(tokenWei), true)
+  // what the mint pulls at the current price: only ETH above the range, only LSTP at or below it, both inside (Pool.modifyLiquidity)
+  const below = JSBI.greaterThanOrEqual(p, sb), above = JSBI.lessThanOrEqual(p, sa)
+  const amount0 = below ? 0n : B(SqrtPriceMath.getAmount0Delta(above ? sa : p, sb, L, true))
+  const amount1 = above ? 0n : B(SqrtPriceMath.getAmount1Delta(sa, below ? sb : p, L, true))
   return { liquidity: B(L), amount0, amount1 }
 }
 export function encodeMint(key: PoolKey, tickLower: number, tickUpper: number, liquidity: bigint, amount0Max: bigint, amount1Max: bigint, owner: Address, deadline: bigint): Hex {
@@ -181,6 +194,9 @@ async function main() {
   const tickSpacing = TICK_SPACING[fee]
   if (!tickSpacing) throw new Error(`unsupported fee ${fee}`)
   const ethIn = parseEther(opt('eth', '0.01')!)
+  const lstpOnly = opt('lstp') !== undefined // one-sided: LSTP only, no ETH beyond gas
+  if (lstpOnly && !(Number(opt('lstp')) > 0)) throw new Error('--lstp needs a positive amount in whole tokens')
+  const lstpIn = lstpOnly ? BigInt(Math.round(Number(opt('lstp')) * 1e6)) * 10n ** 12n : 0n // 18 dp
 
   let ethPerToken: number
   if (opt('price-eth')) ethPerToken = Number(opt('price-eth'))
@@ -194,11 +210,7 @@ async function main() {
   const tokensPerEth = 1 / ethPerToken
   const key: PoolKey = { currency0: zeroAddress, currency1: token, fee, tickSpacing, hooks: zeroAddress }
   const id = poolId(key)
-  const sqrtP = sqrtPriceX96FromTokensPerEth(tokensPerEth)
-  const { tickLower, tickUpper } = fullRangeTicks(tickSpacing)
-  const tokenWanted = BigInt(Math.round(Number(formatEther(ethIn)) * tokensPerEth * 1e6)) * 10n ** 12n // 18 dp
-  const { liquidity, amount0, amount1 } = liquidityAndAmounts(sqrtP, tickLower, tickUpper, ethIn, tokenWanted)
-  const amount0Max = amount0 + amount0 / 100n + 1n, amount1Max = amount1 + amount1 / 100n + 1n
+  const sqrtMarket = sqrtPriceX96FromTokensPerEth(tokensPerEth)
 
   const [decimals, symbol, ethBal, tokBal, slot0] = await Promise.all([
     pub.readContract({ address: token, abi: erc20Abi, functionName: 'decimals' }),
@@ -209,10 +221,27 @@ async function main() {
   ])
   if (decimals !== 18) throw new Error(`token decimals ${decimals} != 18; price math assumes 18`)
   const initialized = slot0[0] !== 0n
+
+  // Amounts are computed at the price the mint will see: the live pool price if it exists, else the price we initialize at.
+  let tickLower: number, tickUpper: number, sqrtInit = sqrtMarket
+  if (lstpOnly) {
+    const marketTick = initialized ? slot0[1] : TickMath.getTickAtSqrtRatio(J(sqrtMarket))
+    ;({ tickLower, tickUpper } = lstpOnlyTicks(marketTick, tickSpacing))
+    // a fresh pool starts exactly at the top of the wall (at most one tick spacing under market) so the first buy meets liquidity
+    if (!initialized) sqrtInit = B(TickMath.getSqrtRatioAtTick(tickUpper))
+  } else {
+    ;({ tickLower, tickUpper } = fullRangeTicks(tickSpacing))
+  }
+  const sqrtP = initialized ? slot0[0] : sqrtInit
+  const tokenWanted = lstpOnly ? lstpIn : BigInt(Math.round(Number(formatEther(ethIn)) * tokensPerEth * 1e6)) * 10n ** 12n // 18 dp
+  const { liquidity, amount0, amount1 } = liquidityAndAmounts(sqrtP, tickLower, tickUpper, lstpOnly ? 0n : ethIn, tokenWanted)
+  const slack = (a: bigint) => (a === 0n ? 0n : a + a / 100n + 1n) // 1% headroom, none for a side we do not fund
+  const amount0Max = slack(amount0), amount1Max = slack(amount1)
   console.log(`deployer   ${account.address}  ETH ${formatEther(ethBal)}  ${symbol} ${formatUnits(tokBal, 18)}`)
   console.log(`token      ${token} (${symbol})`)
   console.log(`pool       fee ${fee / 1e4}% tickSpacing ${tickSpacing} id ${id}`)
-  console.log(`price      1 ETH = ${tokensPerEth.toFixed(2)} ${symbol}   (1 ${symbol} = ${ethPerToken.toExponential(4)} ETH)   sqrtPriceX96 ${sqrtP}`)
+  console.log(`mode       ${opt('swap-test') ? 'swap test only, nothing is minted' : lstpOnly ? `one-sided, ${formatUnits(lstpIn, 18)} ${symbol} only, ticks ${tickLower}..${tickUpper} (sells ${symbol} from the current price upward, no ETH)` : `balanced full range, ${formatEther(ethIn)} ETH + matching ${symbol}`}`)
+  console.log(`price      1 ETH = ${tokensPerEth.toFixed(2)} ${symbol}   (1 ${symbol} = ${ethPerToken.toExponential(4)} ETH)   sqrtPriceX96 ${sqrtMarket}${sqrtInit !== sqrtMarket ? `, pool starts at ${sqrtInit} (tick ${tickUpper})` : ''}`)
   console.log(`liquidity  L=${liquidity}  ETH ${formatEther(amount0)} (max ${formatEther(amount0Max)})  ${symbol} ${formatUnits(amount1, 18)} (max ${formatUnits(amount1Max, 18)})`)
   console.log(`state      ${initialized ? `already initialized at sqrtPriceX96 ${slot0[0]} tick ${slot0[1]}` : 'not initialized'}`)
 
@@ -235,7 +264,7 @@ async function main() {
   }
 
   const calls: Hex[] = []
-  if (!initialized) calls.push(encodeFunctionData({ abi: posmAbi, functionName: 'initializePool', args: [key, sqrtP] }))
+  if (!initialized) calls.push(encodeFunctionData({ abi: posmAbi, functionName: 'initializePool', args: [key, sqrtInit] }))
   calls.push(encodeMint(key, tickLower, tickUpper, liquidity, amount0Max, amount1Max, account.address, deadline))
   const multicall = encodeFunctionData({ abi: posmAbi, functionName: 'multicall', args: [calls] })
   console.log(`calldata   multicall ${calls.length} calls, ${multicall.length / 2 - 1} bytes, value ${formatEther(amount0Max)} ETH`)
@@ -250,7 +279,7 @@ async function main() {
     } catch (e) {
       console.log(`simulate   reverted (expected until balances + approvals are in place): ${(e as Error).message.split('\n')[0]}`)
     }
-    console.log('dry run only. To seed:  pnpm seed -- --confirm' + (opt('mint') ? ` --mint ${opt('mint')}` : ` --price-eth ${ethPerToken}`))
+    console.log('dry run only. To seed:  pnpm seed -- --confirm' + (opt('mint') ? ` --mint ${opt('mint')}` : ` --price-eth ${ethPerToken}`) + (lstpOnly ? ` --lstp ${opt('lstp')}` : ` --eth ${opt('eth', '0.01')}`))
     return
   }
   if (ethBal < amount0Max + parseEther('0.001') || tokBal < amount1Max) throw new Error('insufficient balances, see above')
@@ -270,11 +299,14 @@ async function main() {
   const rcpt = await pub.waitForTransactionReceipt({ hash })
   console.log(`seeded     tx ${hash} status ${rcpt.status} gasUsed ${rcpt.gasUsed}`)
 
-  const [s0, liq] = await Promise.all([
+  const [s0, liq, wall] = await Promise.all([
     pub.readContract({ address: V4.stateView, abi: stateViewAbi, functionName: 'getSlot0', args: [id] }),
     pub.readContract({ address: V4.stateView, abi: stateViewAbi, functionName: 'getLiquidity', args: [id] }),
+    pub.readContract({ address: V4.stateView, abi: stateViewAbi, functionName: 'getTickLiquidity', args: [id, tickUpper] }),
   ])
-  console.log(`verify     sqrtPriceX96 ${s0[0]} tick ${s0[1]} lpFee ${s0[3]} liquidity ${liq}`)
+  // In the one-sided shape the position ends at tickUpper, at or just under the current tick, so the pool's ACTIVE liquidity
+  // reads 0 until the first buy crosses down into it; the wall itself shows up as liquidityGross at tickUpper.
+  console.log(`verify     sqrtPriceX96 ${s0[0]} tick ${s0[1]} lpFee ${s0[3]} active liquidity ${liq}${lstpOnly ? `, ${symbol} wall at tick ${tickUpper} liquidityGross ${wall[0]} (active once the first buy crosses into it)` : ''}`)
   const q = await pub.simulateContract({ address: V4.quoter, abi: quoterAbi, functionName: 'quoteExactInputSingle', args: [{ poolKey: key, zeroForOne: true, exactAmount: parseEther('0.001'), hookData: '0x' }] })
   console.log(`quote      0.001 ETH -> ${formatUnits(q.result[0], 18)} ${symbol}`)
   console.log(`dexscreener https://dexscreener.com/robinhood/${id}`)

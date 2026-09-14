@@ -49,7 +49,7 @@ SOL for a rehearsal; the deployer has none and public airdrops are rate limited)
   later launch; each launch only adds an OFT store.
 - Per launch: pump.fun create + dev buy (`DEV_BUY_SOL` in `launch/.env`, 0.05); `LockstepOFT` deploy
   2,875,621 gas (Robinhood gas price was 0.076 gwei when measured); adapter + wiring account rents on Solana;
-  LayerZero fees per bridge send (quoted by `lz:oft:send` before it sends); the ETH you seed the pool with,
+  LayerZero fees per bridge send (quoted by `lz:oft:send` before it sends); the ETH you seed the pool with (none in the one-sided mode),
   which remains yours as LP.
 
 ## Run sheet (mainnet, in order, each command is yours to run)
@@ -94,15 +94,18 @@ cd poc/oft-twin/lz && pnpm hardhat lz:oapp:wire --oapp-config layerzero.config.t
 cd poc/oft-twin/lz && pnpm hardhat lz:oft:send --src-eid 30168 --dst-eid 30416 --amount 100000 --to 0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3 --token-program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
 ```
    Follow the message on https://layerzeroscan.com. When it lands, `LockstepOFT.totalSupply()` equals the escrowed amount.
-8. Seed the Uniswap v4 pool at the live pump.fun price (dry run first; it prints the LSTP it needs):
+8. Seed the Uniswap v4 pool one-sided at the live pump.fun price: LSTP only, zero ETH beyond gas. The creator budget is
+   at most 1 SOL, which cannot fund a balanced pool, so the position sits from the current price upward and only sells LSTP
+   as buyers push the price up; the first buy sets it in motion. Dry run first:
 ```bash
-cd poc/oft-twin/uniswap && pnpm seed -- --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --eth 0.01
+cd poc/oft-twin/uniswap && pnpm seed -- --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --lstp 50000
 ```
 ```bash
-cd poc/oft-twin/uniswap && pnpm seed -- --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --eth 0.01 --confirm
+cd poc/oft-twin/uniswap && pnpm seed -- --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --lstp 50000 --confirm
 ```
    It prints the pool id and the DexScreener link `https://dexscreener.com/robinhood/<poolId>`.
-   If the price feed is down, pass `--price-eth <ETH per LSTP>` instead of `--mint`.
+   If the price feed is down, pass `--price-eth <ETH per LSTP>` instead of `--mint`. `--eth 0.01` instead of `--lstp`
+   mints a balanced full-range position (needs the ETH plus the matching LSTP).
 9. Buy through the UniversalRouter, the path the bots use:
 ```bash
 cd poc/oft-twin/uniswap && pnpm seed -- --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --swap-test 0.001

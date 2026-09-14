@@ -25,4 +25,8 @@ echo "--- confirm (initialize + mint full-range liquidity)"
 pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --eth 0.05 --confirm
 echo "--- swap 0.001 ETH -> LSTP through the UniversalRouter (what Axiom/GMGN/DexScreener-linked bots use)"
 pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --swap-test 0.001
+echo "--- one-sided seed on the 0.3% tier: 1,000,000 LSTP, zero ETH; dry run, confirm, then buy 0.01 ETH through the router"
+pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --fee 3000 --lstp 1000000
+pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --fee 3000 --lstp 1000000 --confirm
+pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --fee 3000 --swap-test 0.01
 echo "fork test passed"
