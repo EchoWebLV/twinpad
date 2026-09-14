@@ -8,7 +8,7 @@ import { newRetire, step, transition, type LaunchRecord } from "./record.js";
 import { evmBalances, evmSell, solanaBalances, solanaSell } from "./trade.js";
 import { collectCreatorFee } from "./solana/pump.js";
 import { escrowAbi, PONS, walletClient } from "./evm/pons.js";
-import { measureActivity } from "./activity.js";
+import { measureActivity, withTimeout } from "./activity.js";
 import { decide } from "./exit.js";
 import { alert } from "./alerts.js";
 import type { CoinState } from "./coin.js";
@@ -200,10 +200,11 @@ export class Retirer {
     if (from === undefined) {
       const hash = rec.launch.txs.ponsLaunch as Address | undefined;
       if (!hash) return null;
-      const rc = await this.ctx.pub.getTransactionReceipt({ hash });
+      const rc = await withTimeout(this.ctx.pub.getTransactionReceipt({ hash }), 45_000, "Pons launch receipt");
       from = rc.blockNumber;
       this.launchBlocks.set(rec.id, from);
     }
+    console.log(`[retire ${rec.id}] measuring outside interest (${Math.round((Date.now() - rec.retire!.decideAt) / 1000)}s past decideAt)`);
     return measureActivity(this.ctx.conn, this.ctx.pub, {
       pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!,
       ours: { solana: [rec.wallets.solCreator, rec.wallets.solMaker, this.ctx.pool.sol.publicKey.toBase58()].filter(Boolean), evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, this.ctx.pool.evmAddress] },

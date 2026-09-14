@@ -21,9 +21,19 @@ export interface ActivityInput {
  * Pons: every Transfer recipient since launch minus us / curve / pool manager, then balanceOf each.
  * Throws when either chain cannot be read: the caller treats that as "unknown", never as zero.
  */
-export async function measureActivity(conn: Connection, pub: PublicClient, i: ActivityInput): Promise<Activity & { pump: Activity; pons: Activity }> {
-  const [pump, pons] = await Promise.all([pumpActivity(conn, i), ponsActivity(pub, i)]);
+export async function measureActivity(conn: Connection, pub: PublicClient, i: ActivityInput, timeoutMs = 45_000): Promise<Activity & { pump: Activity; pons: Activity }> {
+  const [pump, pons] = await Promise.all([
+    withTimeout(pumpActivity(conn, i), timeoutMs, "pump.fun holders"),
+    withTimeout(ponsActivity(pub, i), timeoutMs, "Pons holders"),
+  ]);
   return { outsideBuyers: pump.outsideBuyers + pons.outsideBuyers, outsideUsd: pump.outsideUsd + pons.outsideUsd, pump, pons };
+}
+
+/** Rejects with `<what> timed out after Nms` when the promise takes longer than `ms`; an RPC that never answers must not wedge the caller. */
+export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: NodeJS.Timeout;
+  const timer = new Promise<never>((_, reject) => { t = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms); });
+  return Promise.race([p, timer]).finally(() => clearTimeout(t)) as Promise<T>;
 }
 
 async function pumpActivity(conn: Connection, i: ActivityInput): Promise<Activity> {
