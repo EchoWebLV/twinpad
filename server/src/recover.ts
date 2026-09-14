@@ -88,7 +88,9 @@ export class Recovery {
     const g = c.gap();
     // the maker scales its clip up to 3x outside the band, so starvation is judged against the clip it actually wants
     const clipUsd = cfg.maker.maxClipUsd * (g ? Math.min(3, g.gap / c.band) : 1);
-    const starved = g !== null && g.gap > c.band && g.expensive === "pump" && inv.evm.eth - clipUsd / c.fx.ETH < cfg.maker.minEth;
+    // a side at its bought-inventory ceiling gets no top-up: the maker will not buy there until sells release it
+    const ceilingUsd = cfg.maker.maxBoughtClips * cfg.maker.maxClipUsd;
+    const starved = g !== null && g.gap > c.band && g.expensive === "pump" && inv.evm.eth - clipUsd / c.fx.ETH < cfg.maker.minEth && c.underCeiling("pons", cfg.maker.maxClipUsd, ceilingUsd);
     if (starved && canTopUp({ fronted: rec.front.eth, repaid: rec.front.repaidEth, topups: rec.front.topupEth }, cfg.recover.topupEth, cfg.recover.maxTopupEthPerCoin)) {
       const can = await this.ctx.pool.canFront(0, cfg.recover.topupEth);
       if (can.ok) {
@@ -102,7 +104,7 @@ export class Recovery {
       } else log(`maker starved of ETH but the pool is at its floor (${can.balances.eth.toFixed(4)} ETH)`);
     }
     // same on Solana: Pons expensive means buying pump, which needs SOL the pump sells have not raised yet
-    const starvedSol = g !== null && g.gap > c.band && g.expensive === "pons" && inv.solana.sol - clipUsd / c.fx.SOL < cfg.maker.minSol;
+    const starvedSol = g !== null && g.gap > c.band && g.expensive === "pons" && inv.solana.sol - clipUsd / c.fx.SOL < cfg.maker.minSol && c.underCeiling("pump", cfg.maker.maxClipUsd, ceilingUsd);
     if (starvedSol && canTopUp({ fronted: rec.front.sol, repaid: rec.front.repaidSol, topups: rec.front.topupSol }, cfg.recover.topupSol, cfg.recover.maxTopupSolPerCoin)) {
       const can = await this.ctx.pool.canFront(cfg.recover.topupSol, 0);
       if (can.ok) {

@@ -86,3 +86,12 @@ test("frontForDevBuy inverts buildQuote's dev buy sizing", () => {
   });
   assert.ok(Math.abs(q.devBuySol - 5) < 1e-3, `devBuy ${q.devBuySol}`);
 });
+
+test("ponsOpeningEth: seeded launches spend the whole ETH front above the maker cash, parity launches only what lifts the curve", async () => {
+  const { ponsOpeningEth } = await import("./quote.js");
+  assert.equal(ponsOpeningEth(0, 0.1, 0.01, true), 0.09); // parity wants nothing (pump.fun landed under the Pons floor) but we seed anyway
+  assert.equal(ponsOpeningEth(0.02, 0.1, 0.01, true), 0.09);
+  assert.equal(ponsOpeningEth(0.02, 0.1, 0.01, false), 0.02);
+  assert.equal(ponsOpeningEth(0.5, 0.1, 0.01, false), 0.09); // capped by the front either way
+  assert.equal(ponsOpeningEth(0.02, 0.005, 0.01, true), 0);
+});

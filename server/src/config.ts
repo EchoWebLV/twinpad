@@ -63,6 +63,9 @@ export const config = {
     jitoBlockEngine: env("JITO_BLOCK_ENGINE") || "https://mainnet.block-engine.jito.wtf/api/v1/bundles",
     evmGasLauncher: num("EVM_GAS_LAUNCHER", 0.012),
     evmMakerCash: num("EVM_MAKER_CASH", 0.01),
+    /** Open a Pons position with the whole ETH front (minus maker cash) even when parity sizing calls for less: a maker with
+     *  nothing to sell on Robinhood can only buy the cheap side with pool money whenever Robinhood runs ahead (the $TWINE bleed). */
+    seedPons: bool("SEED_PONS", true),
     autoApprove: bool("AUTO_APPROVE", false),
     adminToken: env("ADMIN_TOKEN"),
     /** Comma-separated. Wallets that may not launch; name/symbol substrings that are reserved. Admin bans persist in DATA_DIR/bans.json. */
@@ -112,6 +115,9 @@ export const config = {
     minSol: num("MAKER_MIN_SOL", 0.3),
     minEth: num("MAKER_MIN_ETH", 0.01),
     maxErrors: num("MAKER_MAX_ERRORS", 5),
+    /** Per side, the peg may hold at most this many clips (at cost) of tokens it bought on top of the opening position;
+     *  sells release it. Past the ceiling the cheap-side buy is skipped and the pool does not top the side up. */
+    maxBoughtClips: num("MAKER_MAX_BOUGHT_CLIPS", 12),
   },
   server: {
     port: num("PORT", 8787),

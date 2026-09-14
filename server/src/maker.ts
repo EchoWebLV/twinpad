@@ -127,13 +127,13 @@ export class Maker {
     if (inv.solana.tokens > 0) {
       if (st.pump.price >= st.entryPrice) {
         const tokens = Math.min(inv.solana.tokens, clipUsd / st.pump.price);
-        await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
+        await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o), tokens * st.pump.price);
       } else this.skip("pump", "sell", reason, `price $${st.pump.price.toExponential(3)} below entry`);
     }
     if (inv.evm.tokens > 0) {
       if (st.pons.price >= st.entryPrice) {
         const tokens = Math.min(inv.evm.tokens, clipUsd / st.pons.price);
-        await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
+        await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct), tokens * st.pons.price);
       } else this.skip("pons", "sell", reason, `price $${st.pons.price.toExponential(3)} below entry`);
     }
     st.persist();
@@ -153,12 +153,12 @@ export class Maker {
     if (st.repaid.sol < st.front.sol && inv.solana.tokens >= 1 && st.pump.price >= floor) {
       const tokens = Math.min(inv.solana.tokens, clipUsd / st.pump.price);
       const reason = `harvest: pump +${(100 * (st.pump.price / st.entryPrice - 1)).toFixed(1)}% over entry, ${st.repaid.sol.toFixed(3)} of ${st.front.sol} SOL repaid`;
-      await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, new PublicKey(st.pair.pumpMint), tokens, o));
+      await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, new PublicKey(st.pair.pumpMint), tokens, o), tokens * st.pump.price);
     }
     if (st.repaid.eth < st.front.eth && inv.evm.tokens >= 1 && st.pons.price >= floor) {
       const tokens = Math.min(inv.evm.tokens, clipUsd / st.pons.price);
       const reason = `harvest: pons +${(100 * (st.pons.price / st.entryPrice - 1)).toFixed(1)}% over entry, ${st.repaid.eth.toFixed(4)} of ${st.front.eth} ETH repaid`;
-      await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, getAddress(st.pair.ponsToken) as Address, tokens, this.cfg.solana.slippagePct));
+      await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, getAddress(st.pair.ponsToken) as Address, tokens, this.cfg.solana.slippagePct), tokens * st.pons.price);
     }
   }
 
@@ -192,22 +192,26 @@ export class Maker {
     // 1) sell on the expensive side: the scaled clip, or what is left in inventory (not under a quarter of the base clip)
     if (g.expensive === "pump") {
       const tokens = sizeSell(clipUsd / st.pump.price, inv.solana.tokens, this.cfg.maker.maxClipUsd / st.pump.price);
-      if (tokens > 0) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
+      if (tokens > 0) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o), tokens * st.pump.price);
       else this.skip("pump", "sell", reason, `inventory ${inv.solana.tokens.toFixed(0)} tokens`);
     } else {
       const tokens = sizeSell(clipUsd / st.pons.price, inv.evm.tokens, this.cfg.maker.maxClipUsd / st.pons.price);
-      if (tokens > 0) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
+      if (tokens > 0) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct), tokens * st.pons.price);
       else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} tokens`);
     }
-    // 2) buy on the cheap side
+    // 2) buy on the cheap side, unless the peg already holds its ceiling of bought tokens there (sells release it).
     // A scaled clip the wallet cannot fund above its floor shrinks to what it can, never below a quarter of the base clip.
-    if (cheap === "pump") {
+    const ceilingUsd = this.ceilingUsd();
+    if (!st.underCeiling(cheap, this.cfg.maker.maxClipUsd, ceilingUsd)) {
+      const held = cheap === "pump" ? st.maker.bought.pumpUsd : st.maker.bought.ponsUsd;
+      this.skip(cheap, "buy", reason, `inventory ceiling: bought $${held.toFixed(0)} of $${ceilingUsd.toFixed(0)}`);
+    } else if (cheap === "pump") {
       const sol = sizeBuy(clipUsd / st.fx.SOL, inv.solana.sol, this.cfg.maker.minSol, this.cfg.maker.maxClipUsd / st.fx.SOL);
-      if (sol > 0) await this.run("pump", "buy", `${sol.toFixed(4)} SOL`, reason, () => solanaBuy(this.conn, this.solWallet, mint, sol, o));
+      if (sol > 0) await this.run("pump", "buy", `${sol.toFixed(4)} SOL`, reason, () => solanaBuy(this.conn, this.solWallet, mint, sol, o), sol * st.fx.SOL);
       else this.skip("pump", "buy", reason, `SOL floor ${this.cfg.maker.minSol}`);
     } else {
       const eth = sizeBuy(clipUsd / st.fx.ETH, inv.evm.eth, this.cfg.maker.minEth, this.cfg.maker.maxClipUsd / st.fx.ETH);
-      if (eth > 0) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
+      if (eth > 0) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct), eth * st.fx.ETH);
       else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
     }
     await this.recover(inv, tradesBefore);
@@ -233,11 +237,19 @@ export class Maker {
     this.coin.trades.push({ t: Date.now(), side, action, amount: "-", reason, error: `skipped: ${why}` });
   }
 
-  private async run(side: "pump" | "pons", action: "buy" | "sell", amount: string, reason: string, fn: () => Promise<string>) {
+  /** USD value of the peg's bought inventory a side may hold: MAKER_MAX_BOUGHT_CLIPS base clips. */
+  ceilingUsd() {
+    return this.cfg.maker.maxBoughtClips * this.cfg.maker.maxClipUsd;
+  }
+
+  /** `usd` is the trade's size at the prices the tick saw: buys count against the side's ceiling, sells release it. */
+  private async run(side: "pump" | "pons", action: "buy" | "sell", amount: string, reason: string, fn: () => Promise<string>, usd = 0) {
     try {
       const tx = await fn();
       this.coin.trades.push({ t: Date.now(), side, action, amount, reason, tx });
       this.coin.maker.trades++;
+      if (action === "buy") this.coin.noteBuy(side, usd);
+      else this.coin.noteSell(side, usd);
       this.coin.maker.consecutiveErrors = 0;
       console.log(`[maker ${this.coin.id}] ${side} ${action} ${amount} -> ${tx}`);
     } catch (e) {

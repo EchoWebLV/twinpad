@@ -9,7 +9,7 @@ import { sweepEth, sweepSol } from "./pool.js";
 import { coinExists, readBondingCurve, sendBundle, sendSigned, signatureOf, tradeLocal, tradeLocalBundle, waitForSignature, type TradeLocalBody } from "./solana/pump.js";
 import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, readCurve, walletClient, PONS, TOKEN_SUPPLY } from "./evm/pons.js";
 import { evmBuy, evmBalances, solanaBalances, solanaBuy } from "./trade.js";
-import { grossFromNet, quoteNetForFdv, affordableBuySol } from "./quote.js";
+import { grossFromNet, quoteNetForFdv, affordableBuySol, ponsOpeningEth } from "./quote.js";
 import { alert } from "./alerts.js";
 
 export interface LaunchCtx {
@@ -272,8 +272,8 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       const Q = Number(c.quoteReserve) / 1e18, Tk = Number(c.tokenReserve) / 1e18;
       const net = quoteNetForFdv(Q, Tk, TOKEN_SUPPLY, targetUsd / fx.ETH);
       const wanted = grossFromNet(net, Number(c.feeBps), c.creatorTaxBps);
-      const eth = Math.max(0, Math.min(wanted, rec.front.eth - ctx.cfg.launch.evmMakerCash));
-      step(rec, "pons_sizing", now(), { targetUsd: Math.round(targetUsd), wantedEth: wanted, eth });
+      const eth = ponsOpeningEth(wanted, rec.front.eth, ctx.cfg.launch.evmMakerCash, ctx.cfg.launch.seedPons);
+      step(rec, "pons_sizing", now(), { targetUsd: Math.round(targetUsd), wantedEth: wanted, eth, seeded: ctx.cfg.launch.seedPons });
       L.txs.evmMakerBuy = eth > 0 ? await evmBuy(ctx.pub, makerW, L.ponsToken as Address, eth, ctx.cfg.solana.slippagePct) : "skipped";
       save();
     }

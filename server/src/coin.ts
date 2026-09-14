@@ -13,9 +13,16 @@ export interface MakerStatus {
   mode: "peg" | "selldown";
   /** Fronted value − held value, USD (loss guard). */
   lossUsd: number | null;
+  /** Tokens the peg bought on top of the opening position, USD at cost per side; sells release it. Capped by MAKER_MAX_BOUGHT_CLIPS. */
+  bought: { pumpUsd: number; ponsUsd: number };
 }
 
-/** Live state of one coin: both sides, series, trades, maker status. Persists series/trades to DATA_DIR/state/<id>.json. */
+/** Pure form of the ceiling test: what the peg already bought on a side (USD at cost) plus this clip must not exceed the ceiling. */
+export function underCeiling(boughtUsd: number, clipUsd: number, ceilingUsd: number) {
+  return boughtUsd + clipUsd <= ceilingUsd + 1e-9;
+}
+
+/** Live state of one coin: both sides, series, trades, maker status. Persists series/trades/bought to DATA_DIR/state/<id>.json. */
 export class CoinState {
   pump: SideState | null = null;
   pons: SideState | null = null;
@@ -23,7 +30,7 @@ export class CoinState {
   series: SeriesPoint[] = [];
   trades: Trade[] = [];
   inventory: Inventory | null = null;
-  maker: MakerStatus = { enabled: false, running: false, halted: false, haltReason: null, consecutiveErrors: 0, lastTick: 0, ticks: 0, trades: 0, mode: "peg", lossUsd: null };
+  maker: MakerStatus = { enabled: false, running: false, halted: false, haltReason: null, consecutiveErrors: 0, lastTick: 0, ticks: 0, trades: 0, mode: "peg", lossUsd: null, bought: { pumpUsd: 0, ponsUsd: 0 } };
   /** What the pool fronted this coin (sol includes the deployer boost), for the loss guard and front recovery. */
   front: { sol: number; eth: number } = { sol: 0, eth: 0 };
   /** Swept back to the pool so far. Harvest stops per side once repaid ≥ fronted. */
@@ -42,9 +49,10 @@ export class CoinState {
     this.file = path.join(dir, `${id}.json`);
     try {
       if (fs.existsSync(this.file)) {
-        const j = JSON.parse(fs.readFileSync(this.file, "utf8")) as { series?: SeriesPoint[]; trades?: Trade[] };
+        const j = JSON.parse(fs.readFileSync(this.file, "utf8")) as { series?: SeriesPoint[]; trades?: Trade[]; bought?: { pumpUsd: number; ponsUsd: number } };
         this.series = j.series ?? [];
         this.trades = j.trades ?? [];
+        if (j.bought) this.maker.bought = { pumpUsd: Number(j.bought.pumpUsd) || 0, ponsUsd: Number(j.bought.ponsUsd) || 0 };
       }
     } catch {
       this.series = [];
@@ -55,7 +63,21 @@ export class CoinState {
     const cutoff = Date.now() - 24 * 3600 * 1000;
     this.series = this.series.filter((p) => p.t >= cutoff);
     this.trades = this.trades.slice(-2000);
-    fs.writeFileSync(this.file, JSON.stringify({ series: this.series, trades: this.trades }));
+    fs.writeFileSync(this.file, JSON.stringify({ series: this.series, trades: this.trades, bought: this.maker.bought }));
+  }
+
+  /** A peg buy of `usd` on `side` counts against the ceiling; a sell of `usd` releases it (never below zero). */
+  noteBuy(side: "pump" | "pons", usd: number) {
+    const k = side === "pump" ? "pumpUsd" : "ponsUsd";
+    this.maker.bought[k] = Math.round((this.maker.bought[k] + Math.max(0, usd)) * 100) / 100;
+  }
+  noteSell(side: "pump" | "pons", usd: number) {
+    const k = side === "pump" ? "pumpUsd" : "ponsUsd";
+    this.maker.bought[k] = Math.max(0, Math.round((this.maker.bought[k] - Math.max(0, usd)) * 100) / 100);
+  }
+  /** Whether a buy of `clipUsd` on `side` stays under the bought-inventory ceiling. */
+  underCeiling(side: "pump" | "pons", clipUsd: number, ceilingUsd: number) {
+    return underCeiling(side === "pump" ? this.maker.bought.pumpUsd : this.maker.bought.ponsUsd, clipUsd, ceilingUsd);
   }
 
   pushPoint() {

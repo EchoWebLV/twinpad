@@ -20,3 +20,11 @@ test("sizeSell moves the clip, or the remaining inventory when that is smaller",
   assert.equal(sizeSell(8_700_000, 3_777_657, 2_900_000), 3_777_657);
   assert.equal(sizeSell(8_700_000, 500_000, 2_900_000), 0);
 });
+
+test("underCeiling admits a clip up to the ceiling and refuses past it", async () => {
+  const { underCeiling } = await import("./coin.js");
+  assert.equal(underCeiling(0, 25, 300), true);
+  assert.equal(underCeiling(275, 25, 300), true); // lands exactly on the ceiling
+  assert.equal(underCeiling(280, 25, 300), false);
+  assert.equal(underCeiling(300, 25, 300), false);
+});

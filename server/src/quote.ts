@@ -50,6 +50,15 @@ export function tokensOut(Q: number, T: number, net: number) {
   return T - (Q * T) / (Q + net);
 }
 
+/**
+ * ETH the Pons opening buy spends: with `seed` the whole front above the maker cash (so the maker has something to sell
+ * on Robinhood from the first tick), otherwise only what lifts the Pons curve to the pump.fun landing.
+ */
+export function ponsOpeningEth(wantedEth: number, frontEth: number, makerCashEth: number, seed: boolean): number {
+  const cap = Math.max(0, Math.round((frontEth - makerCashEth) * 1e12) / 1e12);
+  return seed ? cap : Math.max(0, Math.min(wantedEth, cap));
+}
+
 export interface FrontLimits { sol: number; eth: number }
 
 /**
