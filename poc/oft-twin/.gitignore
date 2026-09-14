@@ -1,0 +1,17 @@
+# secrets and keypairs — never commit
+.keys/
+.env
+.env.*
+!.env.example
+*-keypair.json
+*.keypair.json
+lz/junk-id.json
+# build output, logs, local artifacts
+node_modules/
+lz/target/
+lz/.anchor/
+lz/deployments/localhost/
+launch/out/
+uniswap/out/
+uniswap/cache/
+*.log
