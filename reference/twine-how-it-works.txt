@@ -1,0 +1,24 @@
+Text of the "how" section of https://twine.auction/ as captured in the browser on 2026-09-12 20:38 UTC.
+
+Two native launches
+
+The coin is created on pump.fun and on PONS in the same second, with the same opening market cap. It trades on each chain's own venues: pump.fun, Axiom and GMGN on Solana; PONS on Robinhood Chain.
+
+One market maker
+
+A maker holds inventory and cash on both chains. When one side runs more than 5% ahead it sells there and buys the other, closing the gap in well under a second. It never adds unhedged exposure.
+
+Fees feed it
+
+Creator rewards from both chains flow back to the maker, so the mirror funds itself. Graduation happens on each chain on its own terms; while a pool is being opened the other side is held to the last price.
+
+---
+Header/meta captured at the same time:
+<title>Twine — one coin, two chains</title>
+<meta name="description" content="One coin launched natively on pump.fun and on Robinhood Chain, held within 5% of each other. Live comparison.">
+Fonts: Instrument Serif (wordmark), Geist (UI), Geist Mono (numbers), via fonts.googleapis.com
+CSS tokens: --bg:#000 --surface:#151419 --raised:#1b1a22 --line:#272533 --text:#e5ebff --muted:#8a8a99 --dim:#5b5a66 --sol:#9945ff --rh:#00c805 --ok:#c6e814 --bad:#ff5c5c --warn:#ffb020 --shell:1240px
+Page sections: header, div.hero, main, section.chart, section.how, footer, one inline script (see twine-frontend.js)
+Hero text seen on the Solana card: "TO GRADUATION (PUMPSWAP AT ~85 SOL)"; on the Robinhood card: "TO GRADUATION (UNISWAP V4 AT 4.2 ETH)"
+Server header: nginx; /api/state responses are application/json with cache-control: no-store and access-control-allow-origin: *
+Trade links: pump.fun/coin/<mint>, axiom.trade/t/<mint>, gmgn.ai/sol/token/<mint>, www.ponsfamily.com/launchpad/<token>, robinhoodchain.blockscout.com/token/<token>

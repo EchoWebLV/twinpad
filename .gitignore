@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.next/
+server/keys/
+server/data/
+*.keypair.json
+mint-*.json
+.DS_Store

@@ -1,0 +1,222 @@
+{
+ "payment": {
+  "address": "Fbout7B7jhuyoQwA5NsVw3FNFSWnRwL7uJ8zqoYSeu8E",
+  "requiredSol": 0.5,
+  "receivedSol": 0.5,
+  "paidAt": "2026-09-13T23:29:22.996Z",
+  "from": "H6CSd2BAQ2qzztEMYTFPRMzPU4voZjhr8wswfpneFvLY",
+  "expectedFrom": "H6CSd2BAQ2qzztEMYTFPRMzPU4voZjhr8wswfpneFvLY",
+  "overpaidSol": 0,
+  "toPoolTx": "5Cgspg8oJ6hikxFUbfavZu2Mtuqg6ZkvASchNRgLptFPkS3ejKJvMThkq4Uj4BGf8TYdUrMuCjsH8S8eLi2Jgksa",
+  "txs": [
+   {
+    "tx": "42AmHqLHpYFqKbDt4y9GdoxzQfDW6okyawmZzgQ4EaWHEG7i225NgBihCzgWVcswyZoR8XYdXPgUKPeHR6Z3fzHS",
+    "from": "H6CSd2BAQ2qzztEMYTFPRMzPU4voZjhr8wswfpneFvLY",
+    "sol": 0.5,
+    "at": "2026-09-13T23:28:51.000Z",
+    "late": false
+   }
+  ],
+  "foreign": []
+ },
+ "devWallet": "H6CSd2BAQ2qzztEMYTFPRMzPU4voZjhr8wswfpneFvLY",
+ "devShareBps": 5000,
+ "devShareBpsFunded": 5000,
+ "approval": {
+  "status": "approved",
+  "at": "2026-09-13T23:33:52.809Z",
+  "note": null
+ },
+ "front": {
+  "sol": 13.817767,
+  "eth": 0.32763978,
+  "at": "2026-09-13T23:38:35.109Z",
+  "repaidSol": 13.817767,
+  "writtenOffSol": 0,
+  "recorded": false
+ },
+ "seed": {
+  "pumpTokens": 327125523,
+  "ponsTokens": 150000000,
+  "openingFdv": 5760,
+  "at": "2026-09-13T23:38:51.082Z"
+ },
+ "refund": {
+  "sol": 0,
+  "paidSol": 0.5,
+  "txs": []
+ },
+ "reserve": {
+  "targetUsd": {
+   "sol": 352.91,
+   "rh": 383.24
+  },
+  "cashUsd": {
+   "sol": 913.33,
+   "rh": 319.86
+  },
+  "reserveMet": true,
+  "reserveMetAt": "2026-09-13T23:39:14.769Z",
+  "funded": true,
+  "fundedAt": "2026-09-13T23:39:18.903Z"
+ },
+ "waterfall": {
+  "devPaid": {
+   "sol": 5.510744041,
+   "eth": 0.426696306
+  },
+  "devPending": {
+   "sol": 0.044943217,
+   "eth": 0
+  },
+  "front": {
+   "sol": 13.817767,
+   "repaidSol": 13.817767
+  },
+  "deposit": {
+   "sol": 0.5,
+   "refundedSol": 0.5
+  },
+  "burned": {
+   "sol": 0,
+   "eth": 0,
+   "tokens": {
+    "pump": 0,
+    "pons": 0
+   }
+  },
+  "lastClaimAt": "2026-09-13T23:44:50.098Z",
+  "at": "2026-09-13T23:44:50.098Z"
+ },
+ "launch": {
+  "startedAt": "2026-09-13T23:38:32.782Z",
+  "steps": [
+   {
+    "at": "2026-09-13T23:38:33.831Z",
+    "name": "preflight",
+    "pumpBytes": 672,
+    "pons": "launchAndBuy simulated: pile delivered to the maker"
+   },
+   {
+    "at": "2026-09-13T23:38:35.109Z",
+    "name": "fronting",
+    "sol": 13.817767,
+    "eth": 0.32763978,
+    "txSol": "QGiEGSGKn4kg\u2026",
+    "txRh": "0xb54ac5f84b\u2026",
+    "existing": false
+   },
+   {
+    "at": "2026-09-13T23:38:35.532Z",
+    "name": "deposit_to_pool",
+    "sol": 0.499,
+    "tx": "5Cgspg8oJ6hi\u2026"
+   },
+   {
+    "at": "2026-09-13T23:38:36.322Z",
+    "name": "funded",
+    "makerSol": 13.7378,
+    "makerEth": 0.01
+   },
+   {
+    "at": "2026-09-13T23:38:36.729Z",
+    "name": "engine_armed"
+   },
+   {
+    "at": "2026-09-13T23:38:54.343Z",
+    "name": "launched",
+    "pumpMint": "68wfKrKBZZpmsTDPm9zVBYtmedUPjca1x5adNWf66CA3",
+    "ponsToken": "0x2669B2a4ce3D5c39b8080605181AEC77362568Da",
+    "pilePump": 327125523,
+    "pilePons": 150000000
+   },
+   {
+    "at": "2026-09-13T23:38:54.454Z",
+    "name": "live",
+    "coinId": "doggo-jq2m"
+   }
+  ],
+  "fee": {
+   "frontSol": 13.817767,
+   "frontEth": 0.32763978,
+   "depositSol": 0.5
+  },
+  "preflight": {
+   "ok": true,
+   "at": "2026-09-13T23:38:33.831Z",
+   "fdv": 5760,
+   "pumpBytes": 672,
+   "ponsProven": true
+  },
+  "frontAsked": true,
+  "funded": true,
+  "pumpMint": "68wfKrKBZZpmsTDPm9zVBYtmedUPjca1x5adNWf66CA3",
+  "ponsToken": "0x2669B2a4ce3D5c39b8080605181AEC77362568Da",
+  "ponsCurve": "0xf3eFEb7DffcDd845A96160749290425aC69552d1",
+  "openingFdv": 5760,
+  "pair": "SOL",
+  "launchedAt": "2026-09-13T23:38:51.082Z",
+  "feeShare": "ok",
+  "allocUnitsSol": "0",
+  "allocUnitsRh": "0",
+  "pile": {
+   "pumpTokens": 327125523,
+   "pumpMakerTokens": 327125523,
+   "ponsTokens": 150000000,
+   "ponsMakerTokens": 150000000,
+   "pumpMakerHeld": "327125523000000",
+   "ponsMakerHeld": "150000000000000000581845238",
+   "pumpMakerTransfer": null,
+   "ponsMakerTransferPending": null,
+   "pumpAlt": "Gg3jJBmRVc7rNAUUSDK5118wrvmED6qowLHe5uvUXjTW"
+  },
+  "distributedAt": "2026-09-13T23:38:51.082Z"
+ },
+ "coinId": "doggo-jq2m",
+ "instance": {
+  "id": "doggo-jq2m",
+  "env": "fee"
+ },
+ "retire": null,
+ "lastTradeAt": "2026-09-13T23:44:46.124Z",
+ "quote": {
+  "openingFdv": 5760,
+  "floors": {
+   "pump": 2783,
+   "pons": 4162
+  },
+  "mult": 1.02,
+  "ponsSeedPct": 15,
+  "landing": {
+   "pump": 5760,
+   "pons": 5760
+  },
+  "pumpTokens": 327125523,
+  "ponsTokens": 150000000,
+  "supplyPct": {
+   "pump": 32.71,
+   "pons": 15
+  },
+  "pumpSol": 13.687767,
+  "ponsEth": 0.30563978,
+  "frontSol": 13.817767,
+  "frontEth": 0.32763978,
+  "frontUsd": 2187,
+  "depositSol": 0.5,
+  "depositUsd": 50,
+  "gas": {
+   "creatorSol": 0.08,
+   "makerGasSol": 0.05,
+   "deployerEth": 0.012,
+   "makerGasEth": 0.01,
+   "createSol": 0.025,
+   "launchEth": 0.002
+  },
+  "fx": {
+   "SOL": 99.55,
+   "ETH": 2477.19
+  },
+  "pair": "SOL",
+  "at": "2026-09-13T23:38:32.782Z"
+ }
+}

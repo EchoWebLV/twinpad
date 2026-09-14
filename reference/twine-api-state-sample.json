@@ -1,0 +1,84 @@
+{
+  "status": "live",
+  "coin": {
+    "id": "twine",
+    "source": "pair"
+  },
+  "pair": {
+    "pumpMint": "CNWxmoBSQZo2Sgp5KSAK5m9FwSqDbXQRP4CNMuoe78Gm",
+    "ponsToken": "0xe27501d787d647CC82a5B4a7Eafd5750386F1B77",
+    "ponsCurve": "0xE1229BDC66e377D7a3baF910bCca8264012d8B57",
+    "launchedAt": null,
+    "name": "TWINE",
+    "symbol": "TWINE"
+  },
+  "meta": {
+    "name": "TWINE",
+    "symbol": "TWINE",
+    "image": "/twine.png",
+    "twitter": "https://x.com/twinedotfun",
+    "website": "https://twine.auction/",
+    "description": "One coin, two chains. Launched natively on pump.fun and on Robinhood Chain and kept within 5% of each other by a market maker. twine.auction"
+  },
+  "fx": {
+    "SOL": 101.455,
+    "ETH": 2522.005
+  },
+  "band": 0.05,
+  "pump": {
+    "chain": "Solana",
+    "venue": "pump.fun",
+    "kind": "pumpswap",
+    "phase": "amm",
+    "phaseLabel": "PumpSwap pool",
+    "fdv": 2445705.7207700615,
+    "price": 0.0024457057207700615,
+    "quoteSymbol": "SOL",
+    "quoteDepth": 752.826426586,
+    "progress": 1,
+    "realQuote": 0,
+    "mint": "CNWxmoBSQZo2Sgp5KSAK5m9FwSqDbXQRP4CNMuoe78Gm",
+    "at": 1789247024420
+  },
+  "pons": {
+    "chain": "Robinhood Chain",
+    "venue": "PONS",
+    "kind": "v4",
+    "phase": "amm",
+    "phaseLabel": "Uniswap v4 pool",
+    "fdv": 2454148.5777586815,
+    "price": 0.0024541485777586814,
+    "quoteSymbol": "ETH",
+    "quoteDepth": 28.880456893895566,
+    "progress": 1,
+    "realQuote": 0,
+    "token": "0xe27501d787d647CC82a5B4a7Eafd5750386F1B77",
+    "curve": "0xE1229BDC66e377D7a3baF910bCca8264012d8B57",
+    "taxBps": 200,
+    "at": 1789247024420
+  },
+  "gap": 0.0034521148300545867,
+  "expensive": "pons",
+  "inBand": true,
+  "stats": {
+    "range": "24h",
+    "points": 1,
+    "inBandPct": 100,
+    "maxGap": 0.027409647344058152,
+    "high": 2605291,
+    "low": 2535786
+  },
+  "series": [
+    {
+      "t": 1789247012255,
+      "pump": 2605291,
+      "pons": 2535786
+    }
+  ],
+  "updatedAt": 1789247024420,
+  "errors": {
+    "pump": 0,
+    "pons": 0
+  },
+  "coins": 2
+}
