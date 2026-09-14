@@ -66,7 +66,8 @@ cd poc/oft-twin/launch && python3 launch.py --confirm
 ```
 2. Deploy the OFT program to Solana mainnet (exact size; later upgrades need `solana program extend`):
 ```bash
-cd poc/oft-twin/lz && set -a && . ./.env && set +a && solana program deploy --program-id ../.keys/oft-program-keypair.json target/verifiable/oft.so --url "$RPC_URL_SOLANA" --keypair ../.keys/solana-deployer.json --max-len 540040 --with-compute-unit-price 50000 --use-rpc
+cd lz && bash deploy-program.sh            # dry run: checks id-in-binary, balance, rent, not-yet-deployed
+cd lz && bash deploy-program.sh --confirm  # runs: cd poc/oft-twin/lz && set -a && . ./.env && set +a && solana program deploy --program-id ../.keys/oft-program-keypair.json target/verifiable/oft.so --url "$RPC_URL_SOLANA" --keypair ../.keys/solana-deployer.json --max-len 540040 --with-compute-unit-price 50000 --use-rpc
 ```
 3. Create the OFT Adapter for the pump.fun mint (writes `lz/deployments/solana-mainnet/OFT.json`):
 ```bash
