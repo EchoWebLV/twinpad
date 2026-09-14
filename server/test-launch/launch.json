@@ -1,40 +1,45 @@
 {
-  "id": "twin-c315",
-  "createdAt": 1789391551785,
+  "id": "ttwin-75b0",
+  "createdAt": 1789398434790,
   "status": "awaiting_deposit",
   "token": {
-    "name": "Twin Flame",
-    "symbol": "TWIN",
-    "description": "First coin off Twinpad. One deposit, live on pump.fun and Pons at the same FDV, held inside a 5% band by a market maker.",
+    "name": "Test Twin",
+    "symbol": "TTWIN",
+    "description": "Twinpad production test. One deposit, live on pump.fun and Pons (Robinhood Chain) at the same FDV, held inside a 5% band by the pad's market maker.",
     "twitter": "",
-    "website": "https://github.com/EchoWebLV/duo-aura-pad",
+    "website": "https://twinpad.one/coin/ttwin-75b0",
     "telegram": "",
-    "imageCid": "bafkreif4vv5isj23vezzsnuenvk53npxqrysulqmraeve7kkkgwts4dq2q",
-    "metadataCid": "bafkreieydss4ouo5xl65s7pcrcj2nusz7zdhwwteqfsj7wpzyvmqrsobhm",
-    "metadataUri": "https://ipfs.io/ipfs/bafkreieydss4ouo5xl65s7pcrcj2nusz7zdhwwteqfsj7wpzyvmqrsobhm"
+    "imageCid": "bafkreiaqqn56zfgdh3uac4ggrj3tzairrflsru3iwc3mnwlgpbvwvq7vbu",
+    "metadataCid": "bafkreihdffym6dfr6i6qdawd63pyudfwx4tb4tx4p6sf54k2g3oamhyrg4",
+    "metadataUri": "https://ipfs.io/ipfs/bafkreihdffym6dfr6i6qdawd63pyudfwx4tb4tx4p6sf54k2g3oamhyrg4"
   },
-  "devWallet": "DMLACHNAxV7bxeaUjVzve7Xo7vJVq7ueFVE6bAVc6WD6",
+  "devWallet": "BQf5B7GBwH2sZHrp5FX9CRYo5qvk2gmHXeGqMe28NWNV",
+  "boostSol": 0.2,
   "devShareBps": 0,
   "devShareBpsFunded": 5000,
   "wallets": {
-    "pumpMint": "4wT84oUu2KucmY8yvMEwdG7SnVQLCoESmF2ZDsFYQsv2",
-    "solCreator": "EeiZxR8iq9AXJHhCNnYQxtiifpnppByYVUeUjGG9rCDJ",
-    "evmLauncher": "0x8b8490E894f405f9ea82410Faa094ed1f4Feda33",
-    "evmMaker": "0x6d2C57b0c112169c2FcD502c0E7eF4cEb3E354a9",
-    "payment": "3tZuTXvnvQVGYykphubHKZYHfCKUqLYnWNC4sFk69tBf"
+    "pumpMint": "283xuCo2Hvakx5PT1xoBWuCzcLGJzq7bbyNwYbxwjnz2",
+    "solCreator": "E3Lng4HpBsreHanCS7y7C6jaDL3jpGVYaa2Y9zr2mwWR",
+    "evmLauncher": "0xEFC41c6c16E2F4a6281323001608F245c2e3747F",
+    "evmMaker": "0xE92967125bb41c5c639681359D52610691c50636",
+    "payment": "3i5HfuSffxDcPnAPXih6m2J49czTQwUAnx2fpyt5Hmo3",
+    "evmPayment": "0x456f03C874A2B37dc85667d5EB73732985A2E941"
   },
   "payment": {
-    "address": "3tZuTXvnvQVGYykphubHKZYHfCKUqLYnWNC4sFk69tBf",
-    "requiredSol": 0.1,
-    "receivedSol": 0,
+    "chain": "sol",
+    "unit": "SOL",
+    "address": "3i5HfuSffxDcPnAPXih6m2J49czTQwUAnx2fpyt5Hmo3",
+    "required": 0.7,
+    "received": 0,
     "paidAt": null,
     "from": null,
-    "expectedFrom": "DMLACHNAxV7bxeaUjVzve7Xo7vJVq7ueFVE6bAVc6WD6",
-    "overpaidSol": 0,
-    "deadlineAt": 1789395151785,
+    "expectedFrom": "BQf5B7GBwH2sZHrp5FX9CRYo5qvk2gmHXeGqMe28NWNV",
+    "overpaid": 0,
+    "deadlineAt": 1789402034790,
     "toPoolTx": null,
     "txs": [],
-    "foreign": []
+    "foreign": [],
+    "claimed": []
   },
   "approval": {
     "status": "pending",
@@ -43,21 +48,24 @@
     "auto": false
   },
   "front": {
-    "sol": 0.6,
-    "eth": 0.03,
+    "sol": 6.9097,
+    "eth": 0.1,
     "at": null,
     "txSol": null,
     "txRhLauncher": null,
     "txRhMaker": null,
     "repaidSol": 0,
-    "writtenOffSol": 0
+    "repaidEth": 0,
+    "writtenOffSol": 0,
+    "topupEth": 0,
+    "retiredAt": null
   },
   "seed": null,
   "launch": {
     "startedAt": null,
     "steps": [
       {
-        "at": 1789391551785,
+        "at": 1789398434790,
         "name": "created"
       }
     ],
@@ -67,37 +75,41 @@
     "ponsCurve": null,
     "launchedAt": null,
     "txs": {},
-    "error": null
+    "error": null,
+    "retries": 0
   },
   "refund": {
-    "sol": 0,
-    "paidSol": 0,
+    "amount": 0,
+    "paid": 0,
     "txs": []
   },
   "reserve": null,
   "waterfall": null,
   "retire": null,
   "quote": {
-    "depositSol": 0.1,
-    "frontSol": 0.6,
-    "frontEth": 0.03,
-    "devBuySol": 0.47,
-    "pumpTokens": 16347298,
-    "ponsEth": 0,
-    "ponsTokens": 0,
-    "makerCashEth": 0.03,
-    "openingFdv": 2915,
+    "depositSol": 0.5,
+    "depositEth": 0.020299,
+    "frontSol": 6.7097,
+    "frontEth": 0.1,
+    "devBuySol": 6.7797,
+    "pumpTokens": 195767664,
+    "ponsEth": 0.009372,
+    "ponsTokens": 5382091,
+    "makerCashEth": 0.090628,
+    "boostSol": 0.2,
+    "parityDevBuySol": 6.5797,
+    "openingFdv": 4256,
     "landing": {
-      "pump": 2915,
-      "pons": 4194
+      "pump": 4256,
+      "pons": 4256
     },
     "supplyPct": {
-      "pump": 1.63,
-      "pons": 0
+      "pump": 19.58,
+      "pons": 0.54
     },
     "fx": {
-      "SOL": 101.115,
-      "ETH": 2496.65
+      "SOL": 101.735,
+      "ETH": 2505.91
     }
   }
 }
