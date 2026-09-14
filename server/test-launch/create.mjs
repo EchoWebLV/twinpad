@@ -9,9 +9,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const api = process.argv.includes("--api") ? process.argv[process.argv.indexOf("--api") + 1] : "http://localhost:8787";
 
 const token = {
-  name: "Twin Flame",
-  symbol: "TWIN",
-  description: "First coin off Twinpad. One deposit, live on pump.fun and Pons at the same FDV, held inside a 5% band by a market maker.",
+  name: "Test Twin",
+  symbol: "TTWIN",
+  description: "Twinpad production test. One deposit, live on pump.fun and Pons (Robinhood Chain) at the same FDV, held inside a 5% band by the pad's market maker.",
+  boostSol: Number(process.env.BOOST_SOL ?? 0),
   twitter: "",
   website: "",
   telegram: "",
@@ -29,8 +30,8 @@ fs.writeFileSync(path.join(here, "launch.json"), JSON.stringify(j, null, 2));
 console.log(JSON.stringify({
   id: j.id, status: j.status,
   pumpMint: j.wallets.pumpMint,
-  payTo: j.payment.address, requiredSol: j.payment.requiredSol, from: j.devWallet,
+  payTo: j.payment.address, requiredSol: j.payment.required, from: j.devWallet,
   deadline: new Date(j.payment.deadlineAt).toISOString(),
   imageCid: j.token.imageCid, metadataUri: j.token.metadataUri,
-  page: `http://localhost:3000/launch/${j.id}`,
+  boostSol: j.boostSol, page: `${process.env.WEB_URL ?? "http://localhost:3000"}/launch/${j.id}`,
 }, null, 2));
