@@ -32,8 +32,8 @@ export function Cat3D() {
       const r = el.getBoundingClientRect();
       const x = (e.clientX - (r.left + r.width / 2)) / Math.max(r.width, 1);
       const y = (e.clientY - (r.top + r.height / 2)) / Math.max(r.height, 1);
-      tx = Math.max(-1.2, Math.min(1.2, x)) * 38;
-      ty = Math.max(-1.2, Math.min(1.2, -y)) * 26;
+      tx = Math.max(-1, Math.min(1, x)) * 12;
+      ty = Math.max(-1, Math.min(1, -y)) * 8;
       kick();
     };
     const leave = () => { tx = 0; ty = 0; kick(); };
