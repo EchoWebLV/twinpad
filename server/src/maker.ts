@@ -157,10 +157,11 @@ export class Maker {
     const inv = await this.refreshInventory();
     if (this.guard(inv)) return;
     if (st.maker.mode === "selldown") return this.selldownTick(inv);
+    const tradesBefore = st.maker.trades;
     if (g.gap <= this.cfg.maker.band) {
       st.maker.consecutiveErrors = 0;
       await this.harvest(inv);
-      await this.recover(inv);
+      await this.recover(inv, tradesBefore);
       st.persist();
       return;
     }
@@ -193,15 +194,20 @@ export class Maker {
       if (inv.evm.eth - eth >= this.cfg.maker.minEth) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
       else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
     }
-    await this.recover(inv);
+    await this.recover(inv, tradesBefore);
     st.persist();
   }
 
-  /** Sweep surplus quote to the pool / top ETH up. Its errors are logged, not counted against the maker. */
-  private async recover(inv: NonNullable<CoinState["inventory"]>) {
+  /**
+   * Sweep surplus quote to the pool / top ETH up. Its errors are logged, not counted against the maker.
+   * Balances are re-read when this tick traded: the tick-start inventory still shows quote a buy has since spent
+   * (and misses what a sell raised), and a sweep sized from it strips the maker below its keep level.
+   */
+  private async recover(inv: NonNullable<CoinState["inventory"]>, tradesBefore: number) {
     if (!this.recovery) return;
     try {
-      await this.recovery.afterTick(this.coin, inv, { sol: this.solWallet, evm: this.evmWallet });
+      const fresh = this.coin.maker.trades !== tradesBefore ? await this.refreshInventory() : inv;
+      await this.recovery.afterTick(this.coin, fresh, { sol: this.solWallet, evm: this.evmWallet });
     } catch (e) {
       console.error(`[recover ${this.coin.id}] ${(e as Error).message.split("\n")[0].slice(0, 200)}`);
     }
