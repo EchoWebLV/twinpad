@@ -18,7 +18,7 @@ export const ROBINHOOD_CHAIN = {
   id: 4663,
   name: "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.ordofi.network"] } },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
 } as const;
 
 export const PONS = {

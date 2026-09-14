@@ -130,7 +130,20 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         },
         pf.expectedEconomics,
       );
-      const gas = await ctx.pub.estimateGas({ account: launcher, to: PONS.factory, data, value: pf.launchFee });
+      // The RPC behind a load balancer can lag the launcher's fresh balance by a few seconds, which makes
+      // estimateGas fail with "exceeds the balance of the account". Retry before giving up.
+      let gas = 0n;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          gas = await ctx.pub.estimateGas({ account: launcher, to: PONS.factory, data, value: pf.launchFee });
+          break;
+        } catch (e) {
+          const msg = (e as Error).message.split("\n")[0];
+          if (attempt >= 10) throw new Error(`launchToken estimateGas failed after ${attempt} attempts: ${msg}`);
+          log(`estimateGas attempt ${attempt} failed (${msg}), retrying`);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
       const hash = await launcherW.sendTransaction({ account: launcherW.account!, chain: launcherW.chain, to: PONS.factory, data, value: pf.launchFee, gas: (gas * 12n) / 10n });
       L.txs.ponsLaunch = hash;
       save();
@@ -148,7 +161,18 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
 
     // ---- maker buy on Pons sized to land at the pump.fun fdv
     if (!L.txs.evmMakerBuy) {
-      const c = await readCurve(ctx.pub, L.ponsToken as Address);
+      // Same RPC lag as above: a replica may not see the launch for a while. Poll until it does.
+      let c: Awaited<ReturnType<typeof readCurve>> | null = null;
+      for (let attempt = 1; !c; attempt++) {
+        try {
+          c = await readCurve(ctx.pub, L.ponsToken as Address);
+        } catch (e) {
+          const msg = (e as Error).message.split("\n")[0];
+          if (attempt >= 60) throw new Error(`readCurve failed after ${attempt} attempts: ${msg}`);
+          if (attempt === 1 || attempt % 10 === 0) log(`readCurve attempt ${attempt} failed (${msg}), retrying`);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
       const Q = Number(c.quoteReserve) / 1e18, Tk = Number(c.tokenReserve) / 1e18;
       const net = quoteNetForFdv(Q, Tk, TOKEN_SUPPLY, targetUsd / fx.ETH);
       const wanted = grossFromNet(net, Number(c.feeBps), c.creatorTaxBps);

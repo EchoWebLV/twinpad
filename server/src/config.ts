@@ -35,7 +35,7 @@ export const config = {
     priorityFeeSol: num("SOL_PRIORITY_FEE_SOL", 0.0005),
   },
   evm: {
-    rpcUrl: env("EVM_RPC_URL", "https://rpc.ordofi.network"),
+    rpcUrl: env("EVM_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
     creatorTaxBps: num("EVM_CREATOR_TAX_BPS", 200),
   },
   pool: {
