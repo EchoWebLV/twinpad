@@ -37,7 +37,7 @@ async function main() {
     const c = new CoinState(
       config.server.dataDir, rec.id, config.maker.band,
       { pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!, launchedAt: rec.launch.launchedAt, name: rec.token.name, symbol: rec.token.symbol },
-      { name: rec.token.name, symbol: rec.token.symbol, image: `https://ipfs.io/ipfs/${rec.token.imageCid}`, twitter: rec.token.twitter, website: rec.token.website, description: rec.token.description },
+      { name: rec.token.name, symbol: rec.token.symbol, image: `https://gateway.pinata.cloud/ipfs/${rec.token.imageCid}`, twitter: rec.token.twitter, website: rec.token.website, description: rec.token.description },
     );
     coins.set(rec.id, c);
     makers.arm(c);
