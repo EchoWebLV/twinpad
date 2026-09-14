@@ -50,6 +50,15 @@ export class Makers {
     return true;
   }
 
+  /** Halt, wait for the in-flight tick, and forget the maker; the coin stays registered so arm() brings it back. */
+  async park(id: string, reason: string) {
+    const m = this.makers.get(id);
+    if (!m) return;
+    this.halt(id, reason);
+    await m.settle();
+    this.makers.delete(id);
+  }
+
   /** Stop and forget a maker (the coin is closing). */
   disarm(id: string) {
     this.halt(id, "closing");

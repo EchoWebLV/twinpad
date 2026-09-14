@@ -177,6 +177,7 @@ POST /api/admin/coins/:id/maker/halt
 POST /api/admin/coins/:id/maker/resume
 POST /api/admin/coins/:id/close        {reason?}  sell back, collect fees, sweep to the pool (live, failed, stuck closing)
 POST /api/admin/coins/:id/keep                    exit timer off for this coin
+POST /api/admin/coins/:id/maker/rotate            move the Solana maker off the pump.fun creator wallet (pre-split launches)
 POST /api/admin/pool/resume                       lift the loss breaker
 GET  /api/admin/pool/status                       paused flag, closes in flight, per-coin loss / fronted / repaid / retired
 ```

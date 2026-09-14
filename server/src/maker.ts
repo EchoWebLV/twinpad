@@ -18,6 +18,7 @@ import type { Recovery } from "./recover.js";
  */
 export class Maker {
   private timer: NodeJS.Timeout | null = null;
+  private inTick = false;
 
   constructor(
     private cfg: Config,
@@ -34,10 +35,13 @@ export class Maker {
     this.coin.maker.enabled = true;
     this.coin.maker.running = true;
     const loop = async () => {
+      this.inTick = true;
       try {
         await this.tick();
       } catch (e) {
         this.onError(`tick: ${(e as Error).message}`);
+      } finally {
+        this.inTick = false;
       }
       if (!this.coin.maker.halted) this.timer = setTimeout(loop, this.cfg.maker.intervalMs);
       else this.coin.maker.running = false;
@@ -49,6 +53,15 @@ export class Maker {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.coin.maker.running = false;
+  }
+
+  /** Resolves once no tick is in flight (after stop()), so wallets can be touched without racing a trade. */
+  async settle(maxMs = 90_000) {
+    const until = Date.now() + maxMs;
+    while (this.inTick) {
+      if (Date.now() > until) throw new Error("maker tick still in flight");
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   resume() {

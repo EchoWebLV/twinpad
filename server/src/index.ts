@@ -18,6 +18,7 @@ import { Makers } from "./makers.js";
 import { Router, RateLimit, HttpError, serve, query } from "./api.js";
 import { OPEN_STATUSES, newRetire, step, transition, publicRecord, type LaunchRecord } from "./record.js";
 import { closeCoin, Retirer } from "./retire.js";
+import { rotateSolMaker } from "./rotate.js";
 import { alert } from "./alerts.js";
 
 /**
@@ -224,6 +225,22 @@ async function main() {
   router.post("/api/admin/coins/:id/maker/halt", (p) => ({ ok: makers.halt(p.id) }), { admin: true });
   router.post("/api/admin/coins/:id/maker/resume", (p) => ({ ok: makers.resume(p.id) }), { admin: true });
   /** Close now: sell inventory back, collect fees, sweep every per-coin wallet to the pool. live, failed or a stuck closing. */
+  /** Move the Solana maker off the pump.fun creator wallet (launches from before the creator/maker split). */
+  router.post("/api/admin/coins/:id/maker/rotate", async (p) => {
+    const r = rec(p.id);
+    if (r.status !== "live") throw new HttpError(409, `status is ${r.status}`);
+    const c = coins.get(p.id);
+    if (!c) throw new HttpError(409, "coin is not armed");
+    if (r.wallets.solMaker && r.wallets.solMaker !== r.wallets.solCreator) throw new HttpError(409, `maker is already ${r.wallets.solMaker}`);
+    await makers.park(p.id, "rotating maker");
+    try {
+      return await rotateSolMaker(conn, registry, r);
+    } finally {
+      c.maker.halted = false;
+      c.maker.haltReason = null;
+      makers.arm(c);
+    }
+  }, { admin: true });
   router.post("/api/admin/coins/:id/close", async (p, body) => {
     const r = rec(p.id);
     if (!["live", "failed", "closing"].includes(r.status)) throw new HttpError(409, `status is ${r.status}`);
