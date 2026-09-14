@@ -134,11 +134,22 @@ export interface OperatorLaunch {
   /** What the pool sends each lock wallet and the gross pump.fun buy the Solana lock wallet places. */
   lock: { fundSol: number; fundEth: number; buySol: number };
   locked: { lockSol: number; lockEth: number; pumpTokens: number; ponsTokens: number; txSol: string | null; txEth: string | null };
+  /** true = the operator pasted the dev wallet (lock) and buyer wallets; they pay their own buys and the pool fronts nothing to them. */
+  selfFunded: boolean;
+  /** The pasted wallets (addresses + amounts only; keys live in keys.json) and each buyer's checkpointed buys. */
+  bundle: { dev: { sol: string; evm: string }; buyers: BundleBuyer[] } | null;
 }
+
+/** One pasted buyer wallet: buys `buySol` in the pump.fun bundle from `sol` and `buyEth` on Pons from `evm` (null = not on that chain). */
+export interface BundleBuyer { sol: string | null; evm: string | null; buySol: number; buyEth: number; txSol: string | null; txEth: string | null }
 
 /** Secret keys for one launch. Written 0600, never served. */
 /** solMaker is absent on records made before the creator/maker split; those coins keep trading from solCreator. */
-export interface LaunchKeys { mint: number[]; solCreator: number[]; solMaker?: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string; solLock?: number[]; evmLock?: string }
+export interface LaunchKeys {
+  mint: number[]; solCreator: number[]; solMaker?: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string; solLock?: number[]; evmLock?: string;
+  /** Operator bundle buyers, same order as `operator.bundle.buyers`. */
+  buyers?: { sol?: number[]; evm?: string }[];
+}
 
 export interface NewRecordInput {
   id: string; token: TokenMeta; devWallet: string; chain: PaymentChain; wallets: LaunchRecord["wallets"]; quote: Quote; deadlineAt: number; now: number;
@@ -235,6 +246,8 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
   if (l) l.retries ??= 0;
   raw.retire ??= null;
   raw.operator ??= null;
+  const op = raw.operator as Record<string, unknown> | null;
+  if (op) { op.selfFunded ??= false; op.bundle ??= null; }
   return raw as unknown as LaunchRecord;
 }
 

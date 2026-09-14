@@ -52,18 +52,27 @@ export interface OperatorLaunch {
   lockPct: number; bundleSol: number; ponsEth: number; cashSol: number; cashEth: number; maxLossUsd: number | null;
   lock: { fundSol: number; fundEth: number; buySol: number };
   locked: { lockSol: number; lockEth: number; pumpTokens: number; ponsTokens: number; txSol: string | null; txEth: string | null };
+  selfFunded: boolean;
+  bundle: { dev: { sol: string; evm: string }; buyers: { sol: string | null; evm: string | null; buySol: number; buyEth: number; txSol: string | null; txEth: string | null }[] } | null;
 }
 export interface OperatorShape {
   lock: { pct: number; tokens: number; sol: number; solGross: number; eth: number; ethGross: number; fundSol: number; fundEth: number };
   pump: { devBuySol: number; tokens: number; supplyPct: number; fdv: number; makerFrontSol: number };
   pons: { eth: number; tokens: number; supplyPct: number; fdv: number; makerFrontEth: number; parityEth: number };
+  buyers: { count: number; sol: number; eth: number; pumpTokens: number; ponsTokens: number; pumpSupplyPct: number; ponsSupplyPct: number; pumpFdv: number; ponsFdv: number };
   pool: { sol: number; eth: number };
+  selfFunded: boolean;
   gapPct: number;
   fx: { SOL: number; ETH: number };
 }
 export interface OperatorQuoteResp {
   shape: OperatorShape;
   pool: { balances: { sol: number; eth: number }; free: { sol: number; eth: number }; ok: boolean; floors: { sol: number; eth: number } };
+}
+export interface WalletCheck { address: string; balance: number; need: number; ok: boolean }
+export interface BundleCheckResp extends OperatorQuoteResp {
+  wallets: { ok: boolean; rows: { label: string; sol: WalletCheck | null; evm: WalletCheck | null }[]; short: string[] } | null;
+  limits: { maxBuyers: number; buySolMax: number; buyEthMax: number };
 }
 export interface CoinSummary {
   id: string; name: string; symbol: string; image: string; launchedAt: number | null; pumpMint: string; ponsToken: string;

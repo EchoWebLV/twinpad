@@ -8,7 +8,8 @@ import { publicClient, launchPreflight, PONS } from "./evm/pons.js";
 import { fx } from "./fx.js";
 import { pinFile, pinJson } from "./ipfs.js";
 import { createLaunch } from "./paid.js";
-import { createOperatorLaunch, shapeQuote, validateOperatorInput, LOCK_ETH_EXTRA, type OperatorInput } from "./operator.js";
+import { createOperatorLaunch, shapeQuote, validateOperatorInput, buyerTotals, LOCK_ETH_EXTRA, type OperatorInput } from "./operator.js";
+import { checkBundleFunding, BUNDLE_LIMITS } from "./bundle.js";
 import { buildQuote, sizeFront, frontForDevBuy } from "./quote.js";
 import { Recovery } from "./recover.js";
 import { ETH_TX_HASH, PaymentWatcher, refundDeposit, refundFromPool } from "./payments.js";
@@ -211,10 +212,12 @@ async function main() {
   router.get("/api/chain/blockhash", async () => ({ blockhash: (await conn.getLatestBlockhash("confirmed")).blockhash }));
 
   // ---- operator launch (hidden page): lock + two-sided open from the pool, straight into the queue
-  const operatorShape = async (op: OperatorInput) => {
+  // selfFunded without wallets = the bundle page previewing the shape before any key is pasted.
+  const operatorShape = async (op: OperatorInput, selfFunded = !!op.wallets) => {
     const [rates, pf] = await Promise.all([fx(), preflight()]);
+    const { wallets, ...rest } = op;
     const inputs = {
-      ...op, fx: rates,
+      ...rest, selfFunded: selfFunded || !!wallets, buyers: buyerTotals(wallets), fx: rates,
       pons: { phantomEth: Number(formatEther(pf.config.phantomQuote)), supply: Number(formatEther(pf.config.supply)), feeBps: Number(pf.config.curveFeeBps), creatorTaxBps: config.evm.creatorTaxBps },
       solGasBudget: config.launch.solGasBudget, evmMakerCash: config.launch.evmMakerCash,
       launcherEth: Number(formatEther(pf.launchFee)) + config.launch.evmGasLauncher,
@@ -229,10 +232,21 @@ async function main() {
     const free = { sol: Math.round((b.sol - config.pool.minSol) * 1e6) / 1e6, eth: Math.round((b.eth - config.pool.minEth) * 1e6) / 1e6 };
     return { shape, pool: { balances: b, free, ok: free.sol >= shape.pool.sol && free.eth >= shape.pool.eth, floors: { sol: config.pool.minSol, eth: config.pool.minEth } }, lockEthExtra: LOCK_ETH_EXTRA };
   }, { admin: true });
+  const checkFunding = (w: NonNullable<OperatorInput["wallets"]>, need: { devSol: number; devEth: number }) => checkBundleFunding(conn, pub, w, need);
+  // Self-funded bundle: the shape plus the live balances of the pasted wallets against what each must hold. Keys are parsed
+  // and dropped; nothing is stored or moved.
+  router.post("/api/admin/launch/check", async (_p, body) => {
+    const op = validateOperatorInput(body);
+    const { shape } = await operatorShape(op, (body as { selfFunded?: unknown })?.selfFunded === true);
+    const b = await poolBalances();
+    const free = { sol: Math.round((b.sol - config.pool.minSol) * 1e6) / 1e6, eth: Math.round((b.eth - config.pool.minEth) * 1e6) / 1e6 };
+    const wallets = op.wallets ? await checkFunding(op.wallets, { devSol: shape.lock.fundSol, devEth: shape.lock.fundEth }) : null;
+    return { shape, pool: { balances: b, free, ok: free.sol >= shape.pool.sol && free.eth >= shape.pool.eth, floors: { sol: config.pool.minSol, eth: config.pool.minEth } }, wallets, limits: BUNDLE_LIMITS, lockEthExtra: LOCK_ETH_EXTRA };
+  }, { admin: true });
   router.post("/api/admin/launch", async (_p, body) => {
     if (scheduler.paused) throw new HttpError(409, "pool is paused (breaker); resume first");
-    const { rec: r, shape } = await createOperatorLaunch({ registry, now: Date.now, publicUrl: config.server.publicUrl, pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) }, shape: operatorShape }, body);
-    console.log(`[operator] launch ${r.id} queued: lock ${shape.lock.pct}% bundle ${shape.pump.devBuySol} SOL / ${shape.pons.eth} ETH`);
+    const { rec: r, shape } = await createOperatorLaunch({ registry, now: Date.now, publicUrl: config.server.publicUrl, pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) }, shape: operatorShape, checkFunding }, body);
+    console.log(`[operator] launch ${r.id} queued: lock ${shape.lock.pct}% bundle ${shape.pump.devBuySol} SOL / ${shape.pons.eth} ETH${shape.selfFunded ? ` self-funded, ${shape.buyers.count} buyers` : ""}`);
     void scheduler.tick();
     return { record: publicRecord(r), shape };
   }, { admin: true });

@@ -4,6 +4,7 @@ import { newRecord, transition, type LaunchRecord, type OperatorLaunch, type Quo
 import { approve } from "./scheduler.js";
 import { pinToken, validateToken, type CreateDeps } from "./paid.js";
 import { BUY_FEE_RATE, PUMP_FEE_BPS, PUMP_VIRTUAL_SOL, PUMP_VIRTUAL_TOKENS, TOTAL_SUPPLY, grossFromNet, parityDevBuySol, tokensOut } from "./quote.js";
+import { LOCK_ETH_EXTRA, LOCK_SOL_EXTRA, bundleAddresses, parseBundleWallets, type BundleCheck, type BundleWallets } from "./bundle.js";
 
 /**
  * Operator launch: the pool bundles a locked allocation (lockPct of supply, bought first on each chain from a
@@ -18,12 +19,12 @@ export interface OperatorInput {
   cashSol: number;
   cashEth: number;
   maxLossUsd: number | null;
+  /** The operator's own dev + buyer wallets (self-funded bundle); null = the pool funds generated lock wallets. */
+  wallets: BundleWallets | null;
 }
 
 export const OPERATOR_LIMITS = { lockPctMax: 40, bundleSolMax: 200, ponsEthMax: 5, cashSolMax: 20, cashEthMax: 1 };
-/** Lock wallet extras: rent + fees on Solana, gas on Robinhood. */
-export const LOCK_SOL_EXTRA = 0.01;
-export const LOCK_ETH_EXTRA = 0.001;
+export { LOCK_SOL_EXTRA, LOCK_ETH_EXTRA };
 
 export function validateOperatorInput(raw: unknown): OperatorInput {
   const i = (raw ?? {}) as Record<string, unknown>;
@@ -46,10 +47,23 @@ export function validateOperatorInput(raw: unknown): OperatorInput {
     if (!Number.isFinite(v) || v <= 0) throw new Error("maxLossUsd must be a positive number");
     maxLossUsd = Math.round(v);
   }
-  return { lockPct, bundleSol, ponsEth, cashSol, cashEth, maxLossUsd };
+  const wallets = parseBundleWallets(i.wallets);
+  return { lockPct, bundleSol, ponsEth, cashSol, cashEth, maxLossUsd, wallets };
 }
 
-export interface ShapeInputs extends OperatorInput {
+/** What the pasted buyers spend in total, per chain (gross of fees). */
+export function buyerTotals(w: BundleWallets | null) {
+  return {
+    sol: r((w?.buyers ?? []).reduce((a, b) => a + b.buySol, 0), 6),
+    eth: r((w?.buyers ?? []).reduce((a, b) => a + b.buyEth, 0), 6),
+    count: w?.buyers.length ?? 0,
+  };
+}
+
+export interface ShapeInputs extends Omit<OperatorInput, "wallets"> {
+  /** Self-funded bundle: the lock money does not leave the pool, and the buyers' opening buys follow the maker's. */
+  selfFunded?: boolean;
+  buyers?: { sol: number; eth: number; count: number };
   fx: { SOL: number; ETH: number };
   pons: { phantomEth: number; supply: number; feeBps: number; creatorTaxBps: number };
   solGasBudget: number;
@@ -62,7 +76,10 @@ export interface Shape {
   lock: { pct: number; tokens: number; sol: number; solGross: number; eth: number; ethGross: number; fundSol: number; fundEth: number };
   pump: { devBuySol: number; tokens: number; supplyPct: number; fdv: number; makerFrontSol: number };
   pons: { eth: number; tokens: number; supplyPct: number; fdv: number; makerFrontEth: number; parityEth: number };
+  /** Pasted buyer wallets, after the maker on each curve: what they spend, what they get, where the price lands. */
+  buyers: { count: number; sol: number; eth: number; pumpTokens: number; ponsTokens: number; pumpSupplyPct: number; ponsSupplyPct: number; pumpFdv: number; ponsFdv: number };
   pool: { sol: number; eth: number };
+  selfFunded: boolean;
   gapPct: number;
   fx: { SOL: number; ETH: number };
 }
@@ -104,12 +121,30 @@ export function shapeQuote(i: ShapeInputs): Shape {
   const lockFundEth = lockGrossEth > 0 ? lockGrossEth + LOCK_ETH_EXTRA : 0;
   const makerFrontSol = i.bundleSol * (1 + BUY_FEE_RATE) + i.solGasBudget + i.cashSol;
   const makerFrontEth = i.ponsEth + i.evmMakerCash + i.cashEth;
+  // pasted buyers, after the maker's buy on each curve
+  const B = i.buyers ?? { sol: 0, eth: 0, count: 0 };
+  const buyersNetSol = B.sol * (1 - pumpFee);
+  const buyersPumpTokens = buyersNetSol > 0 ? tokensOut(Q2, T2, buyersNetSol) : 0;
+  const Q3 = Q2 + buyersNetSol, T3 = T2 - buyersPumpTokens;
+  const buyersPumpFdv = (Q3 / T3) * TOTAL_SUPPLY * i.fx.SOL;
+  const buyersNetEth = B.eth * (1 - (P.feeBps + P.creatorTaxBps) / 10_000);
+  const buyersPonsTokens = buyersNetEth > 0 ? tokensOut(E2, S2, buyersNetEth) : 0;
+  const E3 = E2 + buyersNetEth, S3 = S2 - buyersPonsTokens;
+  const buyersPonsFdv = (E3 / S3) * P.supply * i.fx.ETH;
+  const selfFunded = !!i.selfFunded;
   const gap = pumpFdv > 0 && ponsFdv > 0 ? Math.abs(pumpFdv - ponsFdv) / Math.min(pumpFdv, ponsFdv) : 0;
   return {
     lock: { pct: i.lockPct, tokens: Math.round(lockTokens), sol: r(lockNetSol, 6), solGross: r(lockGrossSol, 6), eth: r(lockNetEth, 6), ethGross: r(lockGrossEth, 6), fundSol: r(lockFundSol, 6), fundEth: r(lockFundEth, 6) },
     pump: { devBuySol: i.bundleSol, tokens: Math.round(pumpTokens), supplyPct: r((100 * pumpTokens) / TOTAL_SUPPLY, 2), fdv: Math.round(pumpFdv), makerFrontSol: r(makerFrontSol, 6) },
     pons: { eth: i.ponsEth, tokens: Math.round(ponsTokens), supplyPct: r((100 * ponsTokens) / P.supply, 2), fdv: Math.round(ponsFdv), makerFrontEth: r(makerFrontEth, 6), parityEth: r(parityEth, 6) },
-    pool: { sol: r(makerFrontSol + lockFundSol, 6), eth: r(makerFrontEth + lockFundEth + i.launcherEth, 6) },
+    buyers: {
+      count: B.count, sol: B.sol, eth: B.eth, pumpTokens: Math.round(buyersPumpTokens), ponsTokens: Math.round(buyersPonsTokens),
+      pumpSupplyPct: r((100 * buyersPumpTokens) / TOTAL_SUPPLY, 2), ponsSupplyPct: r((100 * buyersPonsTokens) / P.supply, 2),
+      pumpFdv: Math.round(buyersPumpFdv), ponsFdv: Math.round(buyersPonsFdv),
+    },
+    // self-funded: the dev wallet pays for its own lock; the pool fronts only the maker, creator and launcher
+    pool: { sol: r(makerFrontSol + (selfFunded ? 0 : lockFundSol), 6), eth: r(makerFrontEth + (selfFunded ? 0 : lockFundEth) + i.launcherEth, 6) },
+    selfFunded,
     gapPct: r(gap * 100, 2),
     fx: i.fx,
   };
@@ -141,11 +176,15 @@ export function newOperator(i: OperatorInput, s: Shape): OperatorLaunch {
     lockPct: i.lockPct, bundleSol: i.bundleSol, ponsEth: i.ponsEth, cashSol: i.cashSol, cashEth: i.cashEth, maxLossUsd: i.maxLossUsd,
     lock: { fundSol: s.lock.fundSol, fundEth: s.lock.fundEth, buySol: s.lock.solGross },
     locked: { lockSol: 0, lockEth: 0, pumpTokens: 0, ponsTokens: 0, txSol: null, txEth: null },
+    selfFunded: !!i.wallets,
+    bundle: i.wallets ? bundleAddresses(i.wallets) : null,
   };
 }
 
 export interface OperatorDeps extends Omit<CreateDeps, "quote" | "maxBoostSol" | "deadlineMin"> {
   shape: (i: OperatorInput) => Promise<{ shape: Shape; inputs: ShapeInputs }>;
+  /** Self-funded bundles: live balances of the pasted wallets against what they must hold; throws when one is short. */
+  checkFunding?: (w: BundleWallets, need: { devSol: number; devEth: number }) => Promise<BundleCheck>;
 }
 
 /**
@@ -156,6 +195,13 @@ export async function createOperatorLaunch(d: OperatorDeps, raw: unknown): Promi
   const input = validateToken(raw);
   const op = validateOperatorInput(raw);
   const { shape, inputs } = await d.shape(op);
+  if (op.wallets) {
+    if (op.lockPct <= 0) throw new Error("a self-funded bundle needs a locked share above 0 (the dev wallet's buy)");
+    if (d.checkFunding) {
+      const c = await d.checkFunding(op.wallets, { devSol: shape.lock.fundSol, devEth: shape.lock.fundEth });
+      if (!c.ok) throw new Error(`wallets short: ${c.short.join("; ")}`);
+    }
+  }
   const id = d.registry.newId(input.symbol);
   const website = d.publicUrl ? `${d.publicUrl}/coin/${id}` : "";
   const cids = await pinToken(d, id, input, website);
@@ -163,16 +209,18 @@ export async function createOperatorLaunch(d: OperatorDeps, raw: unknown): Promi
   const mint = Keypair.generate();
   const solCreator = Keypair.generate();
   const solMaker = Keypair.generate();
-  const solLock = Keypair.generate();
+  // Self-funded: the pasted dev wallet is the lock wallet on both chains.
+  const solLock = op.wallets ? op.wallets.dev.sol : Keypair.generate();
   const payment = Keypair.generate();
   const evmLauncherKey = generatePrivateKey();
   const evmMakerKey = generatePrivateKey();
-  const evmLockKey = generatePrivateKey();
+  const evmLockKey = op.wallets ? op.wallets.dev.evm : generatePrivateKey();
   const evmPaymentKey = generatePrivateKey();
   d.registry.saveKeys(id, {
     mint: Array.from(mint.secretKey), solCreator: Array.from(solCreator.secretKey), solMaker: Array.from(solMaker.secretKey), payment: Array.from(payment.secretKey),
     solLock: Array.from(solLock.secretKey),
     evmLauncher: evmLauncherKey, evmMaker: evmMakerKey, evmPayment: evmPaymentKey, evmLock: evmLockKey,
+    ...(op.wallets ? { buyers: op.wallets.buyers.map((b) => ({ ...(b.sol ? { sol: Array.from(b.sol.secretKey) } : {}), ...(b.evm ? { evm: b.evm } : {}) })) } : {}),
   });
 
   const now = d.now();

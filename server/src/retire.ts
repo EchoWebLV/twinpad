@@ -215,7 +215,10 @@ export class Retirer {
     console.log(`[retire ${rec.id}] measuring outside interest (${Math.round((Date.now() - rec.retire!.decideAt) / 1000)}s past decideAt)`);
     return measureActivity(this.ctx.conn, this.ctx.pub, {
       pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!,
-      ours: { solana: [rec.wallets.solCreator, rec.wallets.solMaker, rec.wallets.solLock, this.ctx.pool.sol.publicKey.toBase58()].filter((w): w is string => !!w), evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, rec.wallets.evmLock, this.ctx.pool.evmAddress].filter((w): w is string => !!w) },
+      ours: {
+        solana: [rec.wallets.solCreator, rec.wallets.solMaker, rec.wallets.solLock, this.ctx.pool.sol.publicKey.toBase58(), ...(rec.operator?.bundle?.buyers ?? []).map((b) => b.sol)].filter((w): w is string => !!w),
+        evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, rec.wallets.evmLock, this.ctx.pool.evmAddress, ...(rec.operator?.bundle?.buyers ?? []).map((b) => b.evm)].filter((w): w is string => !!w),
+      },
       ponsFromBlock: from, price: { pump: c.pump.price, pons: c.pons.price },
     });
   }

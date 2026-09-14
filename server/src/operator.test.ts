@@ -44,7 +44,7 @@ test("shape: zero lock is the plain two-sided open", () => {
 
 test("validateOperatorInput: bounds and defaults", () => {
   const v = validateOperatorInput({ lockPct: "15", bundleSol: "19.46", ponsEth: "0.5", cashSol: "", cashEth: "0.05" });
-  assert.deepEqual(v, { lockPct: 15, bundleSol: 19.46, ponsEth: 0.5, cashSol: 0, cashEth: 0.05, maxLossUsd: null });
+  assert.deepEqual(v, { lockPct: 15, bundleSol: 19.46, ponsEth: 0.5, cashSol: 0, cashEth: 0.05, maxLossUsd: null, wallets: null });
   assert.throws(() => validateOperatorInput({ lockPct: 50, bundleSol: 1, ponsEth: 0.1 }), /lockPct max 40/);
   assert.throws(() => validateOperatorInput({ bundleSol: 0, ponsEth: 0.1 }), /bundleSol must be above 0/);
   assert.throws(() => validateOperatorInput({ bundleSol: 1, ponsEth: 0 }), /ponsEth must be above 0/);

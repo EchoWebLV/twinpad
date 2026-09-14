@@ -189,6 +189,25 @@ GET  /api/admin/launch/quote?lockPct=&bundleSol=&ponsEth=&cashSol=&cashEth=   op
 POST /api/admin/launch                 token fields + {lockPct, bundleSol, ponsEth, cashSol, cashEth, maxLossUsd?}  operator launch, see below
 ```
 
+### Bundle launch (hidden page `/admin/bundle`)
+
+Same launch, the operator's own wallets. The page takes the **dev wallet** (a Solana secret key and a
+Robinhood private key: it is the lock wallet on both chains, buying `lockPct` of supply) and **buyer
+wallets**, one a line: `<solana key or -> <robinhood key or -> <buy SOL> <buy ETH>`. Every pasted wallet
+pays its own buys; the pool fronts only the maker, the creator and the launcher (`shape.pool` excludes the
+lock money, `operator.selfFunded = true`).
+
+- `POST /api/admin/launch/check` (admin) takes the same body as the launch and answers with the shape,
+  the pool's free balance and each pasted wallet's live balance against what it must hold (dev: the lock
+  funding; buyer: `buy × (1 + fees) + 0.01 SOL` / `buy + 0.001 ETH`). Keys are parsed and dropped.
+- `POST /api/admin/launch` with `wallets` runs the same check and refuses when a wallet is short. The keys
+  go to the per-coin `keys.json` (0600): `solLock`/`evmLock` are the dev wallet, `buyers[]` the rest.
+  The launcher re-checks every balance (`bundle_check` step) before the pool fronts anything.
+- pump.fun: the Jito bundle is create → dev buy → maker buy → the first two buyers; the rest buy in
+  order right after it lands (`pump_buyer_buy`). Pons: the dev wallet buys its share, the maker buys, then
+  each buyer buys `buy ETH` from its own wallet (`pons_buyer_buy`). Buyers are snipe-tax exempt.
+- Nothing ever sells, sweeps or closes the pasted wallets; they count as ours for the exit policy.
+
 ### Operator launch (hidden page `/admin/launch`)
 
 The pool launches its own coin. Nothing is owed and nothing waits for approval: the record is written

@@ -11,6 +11,7 @@ import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, quoteBuyForTo
 import { evmBuy, evmBalances, solanaBalances, solanaBuy } from "./trade.js";
 import { grossFromNet, quoteNetForFdv, affordableBuySol, ponsOpeningEth } from "./quote.js";
 import { alert } from "./alerts.js";
+import { JITO_BUNDLE_MAX, checkBundleFunding, type BundleWallets } from "./bundle.js";
 
 export interface LaunchCtx {
   cfg: Config;
@@ -49,8 +50,14 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
   const solLock = op ? Keypair.fromSecretKey(Uint8Array.from(keys.solLock!)) : null;
   const evmLockW = op ? walletClient(ctx.cfg.evm.rpcUrl, keys.evmLock!) : null;
   const evmLock = op ? getAddress(rec.wallets.evmLock!) as Address : null;
-  const lockFundSol = op ? op.lock.fundSol : 0;
-  const lockFundEth = op ? op.lock.fundEth : 0;
+  // Self-funded bundle: the lock wallet is the operator's dev wallet and the pasted buyers place their own buys; the pool fronts none of it.
+  const selfFunded = !!op?.selfFunded && !!op?.bundle;
+  const lockFundSol = op && !selfFunded ? op.lock.fundSol : 0;
+  const lockFundEth = op && !selfFunded ? op.lock.fundEth : 0;
+  const buyers = (selfFunded ? op!.bundle!.buyers : []).map((b, n) => {
+    const k = keys.buyers?.[n] ?? {};
+    return { rec: b, n, sol: k.sol ? Keypair.fromSecretKey(Uint8Array.from(k.sol)) : null, evmW: k.evm ? walletClient(ctx.cfg.evm.rpcUrl, k.evm) : null, evm: b.evm ? getAddress(b.evm) as Address : null };
+  });
   const MINT = mintKp.publicKey;
   const L = rec.launch;
   const T = rec.token;
@@ -95,6 +102,13 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       }
       save();
     }
+    // Self-funded bundle: every pasted wallet must hold its buy before the pool fronts anything; nothing is spent when one is short.
+    if (selfFunded && op && solLock && !L.txs.pumpCreate) {
+      const bw: BundleWallets = { dev: { sol: solLock, evm: keys.evmLock as Hex }, buyers: buyers.map((b) => ({ sol: b.sol, evm: (keys.buyers?.[b.n]?.evm ?? null) as Hex | null, buySol: b.rec.buySol, buyEth: b.rec.buyEth })) };
+      const c = await checkBundleFunding(ctx.conn, ctx.pub, bw, { devSol: op.lock.fundSol, devEth: op.lock.fundEth });
+      step(rec, "bundle_check", now(), { ok: c.ok, wallets: c.rows.map((r) => ({ label: r.label, sol: r.sol, evm: r.evm })) });
+      if (!c.ok) throw new Error(`bundle wallets short: ${c.short.join("; ")}`);
+    }
     if (!L.txs.frontSol || !L.txs.frontRhMaker) {
       const can = await ctx.pool.canFront(rec.front.sol + lockFundSol, needEth);
       if (!can.ok) throw new Error(`pool below floor: ${JSON.stringify(can.balances)} needs ${round6(rec.front.sol + lockFundSol)} SOL + ${needEth.toFixed(4)} ETH`);
@@ -119,7 +133,7 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       L.txs.frontRhMaker = await ctx.pool.transferEth(maker, rec.front.eth);
       save();
     }
-    if (op && solLock && evmLock) {
+    if (op && solLock && evmLock && !selfFunded) {
       if (!L.txs.frontSolLock) {
         L.txs.frontSolLock = await ctx.pool.transferSol(solLock.publicKey, round6(lockFundSol));
         op.locked.lockSol = round6(lockFundSol);
@@ -168,48 +182,39 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         L.txs.pumpCreate = await sendSigned(ctx.conn, tx);
         L.txs.pumpBuy = L.txs.pumpCreate;
       } else {
-        const bodies: TradeLocalBody[] = [
+        // create (creator) → lock buy (dev/lock wallet) → opening buy (maker) → pasted buyers while the bundle has room.
+        const buy = (publicKey: string, amount: number, signer: Keypair): { body: TradeLocalBody; signers: Keypair[] } => ({
+          body: { publicKey, action: "buy", mint: MINT.toBase58(), denominatedInSol: "true", amount, slippage: ctx.cfg.solana.slippagePct, priorityFee: ctx.cfg.solana.priorityFeeSol, pool: "pump" },
+          signers: [signer],
+        });
+        const plan: { body: TradeLocalBody; signers: Keypair[]; buyer?: number }[] = [
           {
-            publicKey: creator.publicKey.toBase58(),
-            action: "create",
-            tokenMetadata: { name: T.name, symbol: T.symbol, uri: T.metadataUri },
-            mint: MINT.toBase58(),
-            denominatedInSol: "true",
-            amount: 0,
-            slippage: ctx.cfg.solana.slippagePct,
-            priorityFee: ctx.cfg.launch.jitoTipSol, // first tx's fee = bundle tip
-            pool: "pump",
+            body: {
+              publicKey: creator.publicKey.toBase58(),
+              action: "create",
+              tokenMetadata: { name: T.name, symbol: T.symbol, uri: T.metadataUri },
+              mint: MINT.toBase58(),
+              denominatedInSol: "true",
+              amount: 0,
+              slippage: ctx.cfg.solana.slippagePct,
+              priorityFee: ctx.cfg.launch.jitoTipSol, // first tx's fee = bundle tip
+              pool: "pump",
+            },
+            signers: [mintKp, creator],
           },
-          ...(op && solLock
-            ? [{
-                publicKey: solLock.publicKey.toBase58(),
-                action: "buy" as const,
-                mint: MINT.toBase58(),
-                denominatedInSol: "true" as const,
-                amount: op.lock.buySol,
-                slippage: ctx.cfg.solana.slippagePct,
-                priorityFee: ctx.cfg.solana.priorityFeeSol,
-                pool: "pump" as const,
-              }]
-            : []),
-          {
-            publicKey: solMaker.publicKey.toBase58(),
-            action: "buy",
-            mint: MINT.toBase58(),
-            denominatedInSol: "true",
-            amount: devBuy,
-            slippage: ctx.cfg.solana.slippagePct,
-            priorityFee: ctx.cfg.solana.priorityFeeSol,
-            pool: "pump",
-          },
+          ...(op && solLock ? [buy(solLock.publicKey.toBase58(), op.lock.buySol, solLock)] : []),
+          buy(solMaker.publicKey.toBase58(), devBuy, solMaker),
         ];
-        const last = bodies.length - 1;
+        const makerAt = plan.length - 1;
+        for (const b of buyers) {
+          if (plan.length >= JITO_BUNDLE_MAX) break;
+          if (b.sol && b.rec.buySol > 0) plan.push({ ...buy(b.sol.publicKey.toBase58(), b.rec.buySol, b.sol), buyer: b.n });
+        }
+        const bodies = plan.map((p) => p.body);
         let landed = false;
         for (let attempt = 1; attempt <= 3 && !landed; attempt++) {
           const txs = await tradeLocalBundle(bodies);
-          txs[0].sign([mintKp, creator]);
-          if (op && solLock) txs[1].sign([solLock]);
-          txs[last].sign([solMaker]);
+          plan.forEach((p, i) => txs[i].sign(p.signers));
           const createSig = signatureOf(txs[0]);
           const bundleId = await sendBundle(ctx.cfg.launch.jitoBlockEngine, txs);
           log(`bundle ${attempt}: ${bundleId} create ${createSig}`);
@@ -217,9 +222,11 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
           if (!landed && (await coinExists(ctx.conn, MINT)).onChain) landed = true;
           if (landed) {
             L.txs.pumpCreate = createSig;
-            L.txs.pumpBuy = signatureOf(txs[last]);
+            L.txs.pumpBuy = signatureOf(txs[makerAt]);
             if (op && solLock) L.txs.pumpLockBuy = signatureOf(txs[1]);
-            step(rec, "pump_bundle", now(), { bundleId, attempt, create: createSig, lockBuy: L.txs.pumpLockBuy ?? null, buy: L.txs.pumpBuy, devBuySol: devBuy, lockSol: op?.lock.buySol ?? 0 });
+            const inBundle: number[] = [];
+            plan.forEach((p, i) => { if (p.buyer != null && op?.bundle) { op.bundle.buyers[p.buyer].txSol = signatureOf(txs[i]); inBundle.push(p.buyer + 1); } });
+            step(rec, "pump_bundle", now(), { bundleId, attempt, create: createSig, lockBuy: L.txs.pumpLockBuy ?? null, buy: L.txs.pumpBuy, devBuySol: devBuy, lockSol: op?.lock.buySol ?? 0, buyers: inBundle });
           }
         }
         if (!landed) {
@@ -260,6 +267,22 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       } else L.txs.pumpBuy = "held";
       save();
     }
+    // Pasted buyers that did not ride in a landed bundle (no room, or the bundle fell back to sequence) buy now, in order.
+    for (const b of buyers) {
+      if (!b.sol || b.rec.buySol <= 0 || b.rec.txSol) continue;
+      const held = await solanaBalances(ctx.conn, b.sol.publicKey, MINT);
+      if (held.tokens < 1) {
+        const o = { slippagePct: ctx.cfg.solana.slippagePct, priorityFeeSol: ctx.cfg.solana.priorityFeeSol };
+        const spend = Math.min(b.rec.buySol, affordableBuySol(held.sol));
+        if (spend <= 0) { log(`buyer ${b.n + 1} holds ${held.sol.toFixed(4)} SOL, skipping its pump.fun buy`); b.rec.txSol = "skipped"; }
+        else {
+          if (spend < b.rec.buySol) log(`buyer ${b.n + 1} buy trimmed to ${spend} SOL (holds ${held.sol.toFixed(4)})`);
+          b.rec.txSol = await solanaBuy(ctx.conn, b.sol, MINT, spend, o);
+          step(rec, "pump_buyer_buy", now(), { buyer: b.n + 1, sol: spend, quoted: b.rec.buySol, tx: b.rec.txSol });
+        }
+      } else b.rec.txSol = "held";
+      save();
+    }
     log(`pump create ${L.txs.pumpCreate}`);
     const curve = await readBondingCurve(ctx.conn, MINT);
     if (!curve) throw new Error("bonding curve not found after create");
@@ -272,7 +295,8 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         {
           name: T.name, symbol: T.symbol, logo: `ipfs://${T.imageCid}`, description: T.description,
           twitter: T.twitter, telegram: T.telegram, website: T.website,
-          creatorFeeRecipient: maker, creatorTaxBps: ctx.cfg.evm.creatorTaxBps, salt: L.salt as Hex, exemptions: evmLock ? [launcher, maker, evmLock] : [launcher, maker],
+          creatorFeeRecipient: maker, creatorTaxBps: ctx.cfg.evm.creatorTaxBps, salt: L.salt as Hex,
+          exemptions: [launcher, maker, ...(evmLock ? [evmLock] : []), ...buyers.filter((b) => b.evm && b.rec.buyEth > 0).map((b) => b.evm!)].slice(0, 32),
         },
         pf.expectedEconomics,
       );
@@ -353,6 +377,22 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       save();
     }
 
+    // ---- pasted buyers on Pons, after the maker, each from its own wallet
+    for (const b of buyers) {
+      if (!b.evmW || !b.evm || b.rec.buyEth <= 0 || b.rec.txEth) continue;
+      const held = await evmBalances(ctx.pub, b.evm, L.ponsToken as Address);
+      if (held.tokens < 1) {
+        const spend = Math.min(b.rec.buyEth, Math.max(0, held.eth - 0.0005));
+        if (spend <= 0) { log(`buyer ${b.n + 1} holds ${held.eth.toFixed(5)} ETH, skipping its Pons buy`); b.rec.txEth = "skipped"; }
+        else {
+          if (spend < b.rec.buyEth) log(`buyer ${b.n + 1} Pons buy trimmed to ${spend} ETH (holds ${held.eth.toFixed(5)})`);
+          b.rec.txEth = await evmBuy(ctx.pub, b.evmW, L.ponsToken as Address, Math.floor(spend * 1e9) / 1e9, ctx.cfg.solana.slippagePct);
+          step(rec, "pons_buyer_buy", now(), { buyer: b.n + 1, eth: spend, quoted: b.rec.buyEth, tx: b.rec.txEth });
+        }
+      } else b.rec.txEth = "held";
+      save();
+    }
+
     // ---- live
     const [s, e] = await Promise.all([solanaBalances(ctx.conn, solMaker.publicKey, MINT), evmBalances(ctx.pub, maker, L.ponsToken as Address)]);
     rec.seed = { pumpTokens: Math.round(s.tokens), ponsTokens: Math.round(e.tokens), openingFdv: Math.round(targetUsd), at: now() };
@@ -365,7 +405,7 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       op.locked.ponsTokens = Math.round(le.tokens);
       // The operator's own coin: no exit timer, it stays until closed by hand.
       rec.retire = { ...newRetire(L.launchedAt, ctx.cfg.retire), keep: true };
-      step(rec, "exit_keep", now(), { pumpTokens: op.locked.pumpTokens, ponsTokens: op.locked.ponsTokens, lockPct: op.lockPct });
+      step(rec, "exit_keep", now(), { pumpTokens: op.locked.pumpTokens, ponsTokens: op.locked.ponsTokens, lockPct: op.lockPct, selfFunded });
     }
     transition(rec, "live", now(), { coinId: rec.id });
     save();
