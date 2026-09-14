@@ -55,9 +55,6 @@ if solana program show "$PROG" --url "$RPC" >/dev/null 2>&1; then
   echo "already deployed:"; solana program show "$PROG" --url "$RPC"; exit 0
 fi
 echo "on-chain  not deployed yet"
-# A failed upload leaves its rent in a buffer account owned by the deployer; refund it before the price math below,
-# otherwise the balance looks too low and the run is refused.
-fi
 # The CLI refuses to start unless balance >= rent + N_tx * (cu_price * 1.4M CU + 5000 lamports): it budgets every write
 # at the 1.4M CU maximum for that check even though the writes it sends carry a small simulated limit (attempt 1 paid
 # ~4.9k lamports per write at 50k). So pick the highest price the check allows, capped at CU_PRICE_MAX.
