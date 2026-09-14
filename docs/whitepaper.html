@@ -146,7 +146,7 @@
       <section id="s1">
         <h2><span class="n">01</span>What Twinpad does</h2>
         <p>A Twinpad coin exists twice: as a pump.fun token on Solana and as a Pons token on Robinhood Chain. Each side has its own bonding curve, its own buyers and its own price. Left alone, the two prices drift apart within minutes. Twinpad's job is to stop that.</p>
-        <p>Every launch gets its own set of wallets. Twinpad's pool fronts each launch with working capital, the coin goes live on both chains, and a per-coin <strong>maker</strong> watches both prices every three seconds. When the fully diluted value on one chain runs more than 5% above the other, the maker sells a small clip on the expensive side and buys a small clip on the cheap side. Inventory never crosses chains. Nothing is bridged.</p>
+        <p>Every launch gets its own set of wallets. Twinpad's pool fronts each launch with working capital, the coin goes live on both chains, and a per-coin <strong>maker</strong> watches both prices every second. When the fully diluted value on one chain runs more than 5% above the other, the maker sells a small clip on the expensive side and buys a small clip on the cheap side. Inventory never crosses chains. Nothing is bridged.</p>
         <p>The pool's capital is a loan, not a gift. While the coin trades above its entry price the maker sells small clips into demand and sweeps the proceeds back to the pool until the front is repaid on both chains. Creator fees from both venues are claimed once a minute while a coin is live and go to the same wallets. A coin that draws no outside holders is closed by policy and its capital returned.</p>
         <div class="callout">
           <p>The whole product rests on one promise: <strong>a holder on either chain gets the same price, and the pool that keeps that promise cannot be drained doing it.</strong> Section 02 is about how that promise was broken elsewhere. Section 03 is how Twinpad keeps it.</p>
@@ -221,7 +221,7 @@
             <text x="536" y="182" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#55534d">bought inventory vs ceiling</text>
             <!-- maker -->
             <rect x="290" y="80" width="180" height="90" fill="#080808" stroke="#ffd400"/>
-            <text x="380" y="112" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="900" font-size="16" fill="#ffd400">MAKER · 3 s</text>
+            <text x="380" y="112" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="900" font-size="16" fill="#ffd400">MAKER · 1 s</text>
             <text x="380" y="134" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#9a978e">gap &gt; 5% → sell rich side</text>
             <text x="380" y="150" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#9a978e">buy cheap side within budget</text>
             <!-- arrows -->
@@ -250,7 +250,7 @@
           <li><strong>Venues.</strong> pump.fun bonding curve at its real virtual reserves (30 SOL against 1.073 billion tokens) with its 1.25% fee. Pons launch configuration 0 as read from chain: 1 billion supply, 1.68 ETH phantom quote, 1% fee, 2% creator tax, graduation at 4.2 ETH raised. After graduation both venues are modelled as constant-product pools seeded from the curve's final state.</li>
           <li><strong>Maker.</strong> Production values: 5% band, $25 clips scaled up to 3× with the gap, 4 clips of working cash kept per side, top-ups of 0.5 SOL and 0.02 ETH capped per coin, $150 per-coin loss guard, fee claims once a minute.</li>
           <li><strong>Flow.</strong> Seven order-flow regimes at two intensities: Solana holders dumping while Robinhood buys and its mirror, each side dumping alone, both dumping, both being bought, and two-way noise. A "30% dump" sells 30% of outsiders' holdings over three hours; a "30% buy" spends 30% of the venue's starting depth.</li>
-          <li><strong>Measure.</strong> Each run lasts three hours at the maker's 3-second tick, repeated over 20 to 40 random seeds. We report the share of ticks inside the band and the pool's outcome against a baseline where the maker is switched off under the same flow.</li>
+          <li><strong>Measure.</strong> Each run lasts three hours at a 3-second tick (production now runs the maker every second, which only tightens the results), repeated over 20 to 40 random seeds. We report the share of ticks inside the band and the pool's outcome against a baseline where the maker is switched off under the same flow.</li>
         </ul>
 
         <h3>Result 1: the launch-stage rules</h3>
