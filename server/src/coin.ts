@@ -7,7 +7,13 @@ export interface Meta { name: string; symbol: string; image: string; twitter: st
 export interface SeriesPoint { t: number; pump: number; pons: number }
 export interface Trade { t: number; side: "pump" | "pons"; action: "buy" | "sell"; amount: string; reason: string; tx?: string; error?: string }
 export interface Inventory { at: number; solana: { sol: number; tokens: number }; evm: { eth: number; tokens: number; escrowEth: number } }
-export interface MakerStatus { enabled: boolean; running: boolean; halted: boolean; haltReason: string | null; consecutiveErrors: number; lastTick: number; ticks: number; trades: number }
+export interface MakerStatus {
+  enabled: boolean; running: boolean; halted: boolean; haltReason: string | null; consecutiveErrors: number; lastTick: number; ticks: number; trades: number;
+  /** peg: hold the band. selldown: sell clips above entry, never buy (exit policy). */
+  mode: "peg" | "selldown";
+  /** Fronted value − held value, USD (loss guard). */
+  lossUsd: number | null;
+}
 
 /** Live state of one coin: both sides, series, trades, maker status. Persists series/trades to DATA_DIR/state/<id>.json. */
 export class CoinState {
@@ -17,7 +23,11 @@ export class CoinState {
   series: SeriesPoint[] = [];
   trades: Trade[] = [];
   inventory: Inventory | null = null;
-  maker: MakerStatus = { enabled: false, running: false, halted: false, haltReason: null, consecutiveErrors: 0, lastTick: 0, ticks: 0, trades: 0 };
+  maker: MakerStatus = { enabled: false, running: false, halted: false, haltReason: null, consecutiveErrors: 0, lastTick: 0, ticks: 0, trades: 0, mode: "peg", lossUsd: null };
+  /** What the pool fronted this coin, for the loss guard. */
+  front: { sol: number; eth: number } = { sol: 0, eth: 0 };
+  /** Our entry price in USD per token (opening FDV / supply); selldown only sells at or above it. */
+  entryPrice = 0;
   errors = { pump: 0, pons: 0 };
   lastError: { pump: string | null; pons: string | null } = { pump: null, pons: null };
   private file: string;

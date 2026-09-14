@@ -15,7 +15,9 @@ import { CoinState } from "./coin.js";
 import { Poller } from "./poller.js";
 import { Makers } from "./makers.js";
 import { Router, RateLimit, HttpError, serve, query } from "./api.js";
-import { OPEN_STATUSES, transition, publicRecord, type LaunchRecord } from "./record.js";
+import { OPEN_STATUSES, newRetire, step, transition, publicRecord, type LaunchRecord } from "./record.js";
+import { closeCoin, Retirer } from "./retire.js";
+import { alert } from "./alerts.js";
 
 /**
  * Launchpad entry: registry + payment watcher + scheduler + launcher + poller + makers + JSON API.
@@ -39,9 +41,17 @@ async function main() {
       { pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!, launchedAt: rec.launch.launchedAt, name: rec.token.name, symbol: rec.token.symbol },
       { name: rec.token.name, symbol: rec.token.symbol, image: `https://gateway.pinata.cloud/ipfs/${rec.token.imageCid}`, twitter: rec.token.twitter, website: rec.token.website, description: rec.token.description },
     );
+    c.front = { sol: rec.front.sol, eth: rec.front.eth };
+    c.entryPrice = rec.seed ? rec.seed.openingFdv / 1e9 : 0;
+    if (!rec.retire) { rec.retire = newRetire(rec.launch.launchedAt ?? Date.now(), config.retire); registry.save(rec); }
     coins.set(rec.id, c);
     makers.arm(c);
+    if (rec.retire.evaluated?.verdict === "selldown") makers.setMode(rec.id, "selldown");
     return c;
+  };
+  const unmount = (id: string) => {
+    makers.disarm(id);
+    coins.delete(id);
   };
   for (const rec of registry.list({ status: ["live"] })) mount(rec);
   new Poller(conn, pub, () => [...coins.values()]).start();
@@ -65,8 +75,33 @@ async function main() {
   const chains = { conn, pub, rpcUrl: config.evm.rpcUrl };
   const watcher = new PaymentWatcher(chains, registry);
   watcher.start();
-  const scheduler = new Scheduler(registry, { autoApprove: config.launch.autoApprove, maxLiveMakers: config.launch.maxLiveMakers }, launch);
+  const scheduler = new Scheduler(registry, {
+    autoApprove: config.launch.autoApprove, maxLiveMakers: config.launch.maxLiveMakers,
+    autoRetries: config.launch.autoRetries, retryBackoffMs: config.launch.retryBackoffMin * 60_000,
+  }, launch);
   scheduler.start();
+
+  // ---- exit policy + close
+  const closing = new Set<string>();
+  const close = async (r: LaunchRecord, reason: string) => {
+    if (closing.has(r.id)) throw new HttpError(409, "already closing");
+    closing.add(r.id);
+    try {
+      unmount(r.id);
+      await closeCoin({ cfg: config, registry, pool, conn, pub }, r, reason);
+    } finally {
+      closing.delete(r.id);
+    }
+  };
+  const breaker = (reason: string) => {
+    if (scheduler.paused) return;
+    scheduler.pause(reason);
+    makers.haltAll(`breaker: ${reason}`);
+    void alert(`POOL BREAKER: ${reason}. Every maker halted, approvals paused. Resume with /api/admin/pool/resume.`);
+  };
+  const retirer = new Retirer({ cfg: config, registry, pool, conn, pub }, () => [...coins.values()], makers, close, breaker);
+  retirer.start();
+  for (const rec of registry.list({ status: ["closing"] })) close(rec, rec.retire?.reason ?? "resume").catch((e) => console.error("[close]", (e as Error).message)); // resume after a crash
 
   // ---- api
   const router = new Router(config.launch.adminToken);
@@ -143,6 +178,31 @@ async function main() {
   }, { admin: true });
   router.post("/api/admin/coins/:id/maker/halt", (p) => ({ ok: makers.halt(p.id) }), { admin: true });
   router.post("/api/admin/coins/:id/maker/resume", (p) => ({ ok: makers.resume(p.id) }), { admin: true });
+  /** Close now: sell inventory back, collect fees, sweep every per-coin wallet to the pool. live, failed or a stuck closing. */
+  router.post("/api/admin/coins/:id/close", async (p, body) => {
+    const r = rec(p.id);
+    if (!["live", "failed", "closing"].includes(r.status)) throw new HttpError(409, `status is ${r.status}`);
+    const note = typeof (body as { reason?: unknown })?.reason === "string" ? (body as { reason: string }).reason : "admin";
+    await close(r, note);
+    return r;
+  }, { admin: true });
+  /** Keep: the exit timer leaves this coin alone; a selldown in progress goes back to pegging. */
+  router.post("/api/admin/coins/:id/keep", (p) => {
+    const r = rec(p.id);
+    if (r.status !== "live") throw new HttpError(409, `status is ${r.status}`);
+    if (!r.retire) r.retire = newRetire(r.launch.launchedAt ?? r.createdAt, config.retire);
+    r.retire.keep = true;
+    step(r, "exit_keep", Date.now());
+    registry.save(r);
+    makers.setMode(r.id, "peg");
+    return r;
+  }, { admin: true });
+  router.post("/api/admin/pool/resume", () => {
+    scheduler.unpause();
+    for (const c of coins.values()) makers.resume(c.id);
+    return { ok: true, paused: scheduler.paused };
+  }, { admin: true });
+  router.get("/api/admin/pool/status", () => ({ paused: scheduler.paused, closing: [...closing], lossUsd: [...coins.values()].map((c) => ({ id: c.id, lossUsd: c.maker.lossUsd, mode: c.maker.mode })) }), { admin: true });
 
   serve(router, config.server.port, config.server.corsOrigin);
 }

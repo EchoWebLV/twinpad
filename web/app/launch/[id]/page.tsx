@@ -72,6 +72,10 @@ export default function LaunchPage() {
   const stepAt = (k: string) => l.launch.steps.find((s) => s.name === k)?.at;
   const remaining = Math.max(0, l.payment.deadlineAt - now);
   const terminal = ["rejected", "expired", "failed"].includes(l.status);
+  const R = l.retire;
+  const exitRule = R
+    ? `By ${new Date(R.decideAt).toLocaleTimeString()} the coin needs ${R.policy.minBuyers} outside holders or $${R.policy.minUsd} held by outsiders across both chains. Below that the pool exits: instantly when nobody bought, otherwise sold down over ${R.policy.selldownMin} min at or above the opening price.`
+    : null;
   const isEth = l.payment.chain === "eth";
   const unit = l.payment.unit;
   const scan = isEth ? RHSCAN : SOLSCAN;
@@ -133,10 +137,31 @@ export default function LaunchPage() {
                 <a className="lnk" href={PUMP(l.wallets.pumpMint)} target="_blank" rel="noreferrer">pump.fun ↗</a>
                 {l.launch.ponsToken && <a className="lnk" href={PONS(l.launch.ponsToken)} target="_blank" rel="noreferrer">Pons ↗</a>}
               </div>
+              {R && (
+                <p className="dim" style={{ marginTop: 14, fontSize: 12 }}>
+                  {R.keep
+                    ? "Exit timer off: the operator is keeping this coin."
+                    : R.evaluated?.verdict === "keep"
+                      ? `Passed the interest check with ${R.evaluated.outsideBuyers} outside holders and $${R.evaluated.outsideUsd.toFixed(0)} held. The maker stays.`
+                      : R.evaluated?.verdict === "selldown"
+                        ? `Interest check missed (${R.evaluated.outsideBuyers} outside holders, $${R.evaluated.outsideUsd.toFixed(0)} held). The pool is selling down until ${R.selldownUntil ? new Date(R.selldownUntil).toLocaleTimeString() : "soon"}, then closes.`
+                        : exitRule}
+                </p>
+              )}
+            </div>
+          )}
+          {(l.status === "closing" || l.status === "closed") && (
+            <div className="box r">
+              <h2>{l.status === "closed" ? "Closed" : "Closing"}</h2>
+              <p className="mute">{R?.reason ?? "The pool is exiting this coin."}</p>
+              {R && R.evaluated && <p className="mute" style={{ marginTop: 8 }}>Interest check: {R.evaluated.outsideBuyers} outside holders, ${R.evaluated.outsideUsd.toFixed(0)} held (needed {R.policy.minBuyers} or ${R.policy.minUsd}).</p>}
+              {R && (R.swept.sol > 0 || R.swept.eth > 0) && <p className="mute" style={{ marginTop: 8 }}>Recovered {R.swept.sol.toFixed(4)} SOL + {R.swept.eth.toFixed(5)} ETH of {l.front.sol} SOL + {l.front.eth} ETH fronted.</p>}
+              {R?.error && <p className="err">{R.error}</p>}
+              <p className="dim" style={{ marginTop: 10, fontSize: 12 }}>The tokens stay tradable on pump.fun and Pons; only the pool's market maker has left.</p>
             </div>
           )}
           {l.status === "launching" && (
-            <div className="box on r"><span className="st launching">Launching now</span><p className="mute" style={{ marginTop: 10 }}>Both chains are being set up. This page updates on its own.</p></div>
+            <div className="box on r"><span className="st launching">Launching now</span><p className="mute" style={{ marginTop: 10 }}>Both chains are being set up. This page updates on its own.</p>{exitRule && <p className="dim" style={{ marginTop: 10, fontSize: 12 }}>{exitRule}</p>}</div>
           )}
           {terminal && (
             <div className="box r">

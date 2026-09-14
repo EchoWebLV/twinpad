@@ -4,6 +4,8 @@ import type { Config } from "./config.js";
 import type { CoinState } from "./coin.js";
 import { escrowAbi, PONS } from "./evm/pons.js";
 import { evmBalances, evmBuy, evmSell, solanaBalances, solanaBuy, solanaSell } from "./trade.js";
+import { lossUsd } from "./exit.js";
+import { alert } from "./alerts.js";
 
 /**
  * The TWINE-style peg: whenever the two FDVs drift apart by more than `band`,
@@ -79,6 +81,47 @@ export class Maker {
     return this.coin.inventory;
   }
 
+  /** Exit policy: stop pegging, sell inventory in clips whenever a side trades at or above our entry. */
+  setMode(mode: "peg" | "selldown") {
+    this.coin.maker.mode = mode;
+  }
+
+  /** Halt when the pool is down more than the per-coin budget on this coin. Returns true when halted. */
+  private guard(inv: NonNullable<CoinState["inventory"]>): boolean {
+    const st = this.coin;
+    if (!st.pump || !st.pons || !st.fx.SOL || !st.fx.ETH) return false;
+    const loss = lossUsd(st.front, inv, { pump: st.pump.price, pons: st.pons.price }, st.fx);
+    st.maker.lossUsd = Math.round(loss * 100) / 100;
+    if (loss <= this.cfg.guard.maxLossUsdPerCoin) return false;
+    st.maker.halted = true;
+    st.maker.haltReason = `loss guard: down $${loss.toFixed(0)} > $${this.cfg.guard.maxLossUsdPerCoin}`;
+    void alert(`[maker ${st.id}] HALTED: ${st.maker.haltReason}`);
+    return true;
+  }
+
+  private async selldownTick(inv: NonNullable<CoinState["inventory"]>) {
+    const st = this.coin;
+    if (!st.pump || !st.pons) return;
+    const mint = new PublicKey(st.pair.pumpMint);
+    const token = getAddress(st.pair.ponsToken) as Address;
+    const o = { slippagePct: this.cfg.solana.slippagePct, priorityFeeSol: this.cfg.solana.priorityFeeSol };
+    const reason = `selldown: entry $${st.entryPrice.toExponential(3)}/token`;
+    const clipUsd = this.cfg.maker.maxClipUsd;
+    if (inv.solana.tokens > 0) {
+      if (st.pump.price >= st.entryPrice) {
+        const tokens = Math.min(inv.solana.tokens, clipUsd / st.pump.price);
+        await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
+      } else this.skip("pump", "sell", reason, `price $${st.pump.price.toExponential(3)} below entry`);
+    }
+    if (inv.evm.tokens > 0) {
+      if (st.pons.price >= st.entryPrice) {
+        const tokens = Math.min(inv.evm.tokens, clipUsd / st.pons.price);
+        await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
+      } else this.skip("pons", "sell", reason, `price $${st.pons.price.toExponential(3)} below entry`);
+    }
+    st.persist();
+  }
+
   async tick() {
     const st = this.coin;
     st.maker.ticks++;
@@ -87,6 +130,8 @@ export class Maker {
     const g = st.gap();
     if (!g) return;
     const inv = await this.refreshInventory();
+    if (this.guard(inv)) return;
+    if (st.maker.mode === "selldown") return this.selldownTick(inv);
     if (g.gap <= this.cfg.maker.band) {
       st.maker.consecutiveErrors = 0;
       return;

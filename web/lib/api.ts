@@ -34,8 +34,14 @@ export interface Launch {
   };
   approval: { status: string; at: number | null; note: string | null; auto: boolean };
   front: { sol: number; eth: number; at: number | null };
-  launch: { steps: Step[]; pumpMint: string | null; ponsToken: string | null; error: string | null };
+  launch: { steps: Step[]; pumpMint: string | null; ponsToken: string | null; error: string | null; retries: number };
   refund: { amount: number; txs: string[] };
+  retire: {
+    decideAt: number; policy: { afterMin: number; minBuyers: number; minUsd: number; selldownMin: number }; keep: boolean;
+    evaluated: { at: number; outsideBuyers: number; outsideUsd: number; verdict: "keep" | "full" | "selldown" } | null;
+    selldownUntil: number | null; mode: "full" | "selldown" | null; reason: string | null; closedAt: number | null;
+    sold: { pumpTokens: number; ponsTokens: number; txs: string[] }; swept: { sol: number; eth: number; txs: string[] }; error: string | null;
+  } | null;
   quote: Quote;
 }
 export interface CoinSummary {

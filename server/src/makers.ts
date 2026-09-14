@@ -41,4 +41,22 @@ export class Makers {
     m.resume();
     return true;
   }
+
+  setMode(id: string, mode: "peg" | "selldown") {
+    const m = this.makers.get(id);
+    if (!m) return false;
+    m.setMode(mode);
+    return true;
+  }
+
+  /** Stop and forget a maker (the coin is closing). */
+  disarm(id: string) {
+    this.halt(id, "closing");
+    this.makers.delete(id);
+    this.coins.delete(id);
+  }
+
+  haltAll(reason: string) {
+    for (const id of this.makers.keys()) this.halt(id, reason);
+  }
 }

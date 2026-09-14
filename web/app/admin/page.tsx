@@ -104,7 +104,9 @@ export default function Admin() {
                     <td><span className={`st ${c.maker === "running" ? "live" : c.maker === "halted" ? "bad" : "off"}`}>{c.maker}</span></td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <button className="btn red sm" onClick={() => act(`/api/admin/coins/${c.id}/maker/halt`)}>halt</button>{" "}
-                      <button className="btn sm" onClick={() => act(`/api/admin/coins/${c.id}/maker/resume`)}>resume</button>
+                      <button className="btn sm" onClick={() => act(`/api/admin/coins/${c.id}/maker/resume`)}>resume</button>{" "}
+                      <button className="btn sm" onClick={() => act(`/api/admin/coins/${c.id}/keep`)}>keep</button>{" "}
+                      <button className="btn red sm" onClick={() => { if (confirm(`Close ${c.symbol}: sell the maker's tokens back and sweep every wallet to the pool?`)) act(`/api/admin/coins/${c.id}/close`, { reason: "admin" }); }}>close</button>
                     </td>
                   </tr>
                 ))}

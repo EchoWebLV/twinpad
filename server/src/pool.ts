@@ -32,8 +32,9 @@ export class Pool {
     let sol = 0, eth = 0;
     for (const r of registry.list()) {
       if (!r.front.at) continue;
-      sol += r.front.sol - r.front.repaidSol - r.front.writtenOffSol;
-      eth += r.front.eth;
+      // A close also sweeps launcher gas that was never part of front.eth, so clamp at zero per record.
+      sol += Math.max(0, r.front.sol - r.front.repaidSol - r.front.writtenOffSol);
+      eth += Math.max(0, r.front.eth - r.front.repaidEth);
     }
     return { sol, eth };
   }
@@ -106,12 +107,15 @@ export async function sweepEth(pub: PublicClient, rpcUrl: string, fromKey: strin
   const from = addressOf(fromKey);
   const bal = await pub.getBalance({ address: from });
   if (bal === 0n) return null;
-  const [gas, gasPrice] = await Promise.all([pub.estimateGas({ account: from, to, value: 1n }), pub.getGasPrice()]);
-  const reserve = (gas * gasPrice * 3n) / 2n; // 50 % margin: the L1 data component moves between estimate and inclusion
+  // EIP-1559: the cap must cover a base fee that can double between estimate and inclusion; the unused part is refunded.
+  const [gas, block, fees] = await Promise.all([pub.estimateGas({ account: from, to, value: 1n }), pub.getBlock(), pub.estimateFeesPerGas()]);
+  const maxPriorityFeePerGas = fees.maxPriorityFeePerGas ?? 0n;
+  const maxFeePerGas = (block.baseFeePerGas ?? fees.maxFeePerGas ?? 0n) * 2n + maxPriorityFeePerGas;
+  const reserve = gas * maxFeePerGas;
   if (bal <= reserve) return null;
   const value = bal - reserve;
   const w = walletClient(rpcUrl, fromKey);
-  const hash: Hex = await w.sendTransaction({ account: w.account!, chain: w.chain, to, value, gas, gasPrice });
+  const hash: Hex = await w.sendTransaction({ account: w.account!, chain: w.chain, to, value, gas, maxFeePerGas, maxPriorityFeePerGas });
   const receipt = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
   if (receipt.status !== "success") throw new Error(`eth sweep ${hash} reverted`);
   return { sig: hash, eth: Number(formatEther(value)) };

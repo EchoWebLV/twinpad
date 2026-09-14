@@ -23,11 +23,19 @@ Phase 2 (not built): deposit refunds, waterfall, dev share.
 | 4. Front | pool | Pool SOL wallet funds the per-coin creator/maker wallet with `FRONT_SOL`; pool ETH wallet funds the Pons launcher (gas + launch fee) and the Pons maker with `FRONT_ETH`. The deposit is swept into the pool. |
 | 5. Launch | server | pump.fun `create` + dev buy of `FRONT_SOL − SOL_GAS_BUDGET`. Reads the resulting curve, then Pons `launchToken` (maker = `creatorFeeRecipient`, launcher + maker tax-exempt) and a maker buy sized to land the Pons FDV on the pump.fun FDV. |
 | 6. Live | maker | Per-coin maker polls both sides and trades whenever the gap exceeds `BAND`, capped by `MAKER_MAX_CLIP_USD` and wallet floors. |
+| 7. Exit check | timer | At launch + `RETIRE_AFTER_MIN` the coin needs `RETIRE_MIN_BUYERS` outside holders or `RETIRE_MIN_USD` held by outsiders across both chains. Met: the maker stays. Zero outside holders: instant close. Otherwise: selldown (sell clips at or above the opening price, no buys) for `RETIRE_SELLDOWN_MIN`, then close. The rule is printed on the launch page. `keep` from `/admin` switches the timer off. |
+| 8. Close | pool | Sells the maker's tokens back on both chains, collects pump.fun creator fees and the Pons creator tax, sweeps every per-coin wallet (creator, maker, launcher, payment) to the pool. Recovered amounts are on the record (`retire.swept`). Idempotent: a failed close resumes at the step it stopped. |
 
 Every step is checkpointed in the launch record, so a crash mid-launch resumes at the
-next step instead of re-running a spend. A failed launch is retryable from `/admin`.
+next step instead of re-running a spend. A failed launch is re-queued `LAUNCH_AUTO_RETRIES`
+times (after `LAUNCH_RETRY_BACKOFF_MIN`) and stays retryable from `/admin` after that.
 
-Statuses: `awaiting_deposit → paid → approved → launching → live`, plus `rejected`,
+Loss guards: each maker halts when the pool is down more than `MAX_LOSS_USD_PER_COIN` on
+that coin (fronted value minus what the maker holds); above `MAX_LOSS_USD_POOL` across live
+coins every maker halts and approvals pause until `POST /api/admin/pool/resume`. Halts,
+the breaker and closes go to `ALERT_WEBHOOK_URL` when set.
+
+Statuses: `awaiting_deposit → paid → approved → launching → live → closing → closed`, plus `rejected`,
 `expired`, `failed` (retry puts it back to `approved`).
 
 ### Sizing
@@ -155,6 +163,10 @@ POST /api/admin/paid/:id/reject
 POST /api/admin/paid/:id/retry
 POST /api/admin/coins/:id/maker/halt
 POST /api/admin/coins/:id/maker/resume
+POST /api/admin/coins/:id/close        {reason?}  sell back, collect fees, sweep to the pool (live, failed, stuck closing)
+POST /api/admin/coins/:id/keep                    exit timer off for this coin
+POST /api/admin/pool/resume                       lift the loss breaker
+GET  /api/admin/pool/status                       paused flag, closes in flight, per-coin loss
 ```
 
 ---
@@ -186,4 +198,6 @@ Both `server/` and `web/` have a `Dockerfile` and `railway.json`.
 cd server
 npm run bridge -- eth-to-sol 0.1            # quote a Relay bridge between the pool wallets; add --confirm to send
 npm run prices     # print current fx and pair prices
+node test-launch/create.mjs      # submit a test launch (image + metadata in test-launch/), writes launch.json
+node test-launch/pay.mjs         # pay its deposit from the root .env wallet; dry run unless --confirm
 ```

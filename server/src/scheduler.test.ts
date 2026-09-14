@@ -28,3 +28,14 @@ test("launch oldest approved, one at a time", () => {
   assert.deepEqual(acts, [{ type: "launch", id: "old" }]);
   assert.deepEqual(plan([mk("a", "approved"), mk("b", "launching")], { autoApprove: false, maxLiveMakers: 5 }), []);
 });
+
+test("failed launches are re-queued after the backoff, up to autoRetries, never while paused", () => {
+  const f = mk("f", "launching", 0);
+  transition(f, "failed", 100);
+  const cfg = { autoApprove: false, maxLiveMakers: 5, autoRetries: 2, retryBackoffMs: 1000 };
+  assert.deepEqual(plan([f], cfg, 500), []);
+  assert.deepEqual(plan([f], cfg, 1100), [{ type: "retry", id: "f" }]);
+  assert.deepEqual(plan([f], { ...cfg, paused: true }, 1100), []);
+  f.launch.retries = 2;
+  assert.deepEqual(plan([f], cfg, 1100), []);
+});

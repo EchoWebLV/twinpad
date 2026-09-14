@@ -2,10 +2,13 @@ import {
   Connection,
   Keypair,
   PublicKey,
+  TransactionInstruction,
+  TransactionMessage,
   VersionedTransaction,
   type Commitment,
 } from "@solana/web3.js";
 import bs58 from "bs58";
+import { createHash } from "node:crypto";
 
 // Verified program ids (see DUO-LAUNCH-SPEC.md §3.5, §4.2)
 export const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
@@ -169,4 +172,39 @@ export async function coinExists(conn: Connection, mint: PublicKey) {
     /* network */
   }
   return { onChain: sigs.length > 0, apiStatus, api };
+}
+
+/**
+ * pump.fun `collect_creator_fee`: moves the creator vault (creator-fee share of every trade on our coins) to the creator wallet.
+ * Simulated first; returns null when the vault is empty or the simulation fails, so a close never stops on it.
+ */
+export async function collectCreatorFee(conn: Connection, creator: Keypair): Promise<{ sig: string; sol: number } | null> {
+  const vault = pda.pumpCreatorVault(creator.publicKey);
+  const bal = await conn.getBalance(vault, "confirmed");
+  const rentExempt = await conn.getMinimumBalanceForRentExemption(0);
+  if (bal <= rentExempt) return null;
+  const disc = createHash("sha256").update("global:collect_creator_fee").digest().subarray(0, 8);
+  const ix = new TransactionInstruction({
+    programId: PUMP_PROGRAM,
+    keys: [
+      { pubkey: creator.publicKey, isSigner: true, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: SYSTEM_PROGRAM, isSigner: false, isWritable: false },
+      { pubkey: pda.pumpEventAuthority(), isSigner: false, isWritable: false },
+      { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(disc),
+  });
+  const latest = await conn.getLatestBlockhash("confirmed");
+  const msg = new TransactionMessage({ payerKey: creator.publicKey, recentBlockhash: latest.blockhash, instructions: [ix] }).compileToV0Message();
+  const tx = new VersionedTransaction(msg);
+  tx.sign([creator]);
+  const sim = await conn.simulateTransaction(tx, { commitment: "confirmed" });
+  if (sim.value.err) {
+    console.error(`[pump] collect_creator_fee simulation failed: ${JSON.stringify(sim.value.err)} ${(sim.value.logs ?? []).slice(-3).join(" | ")}`);
+    return null;
+  }
+  const sig = await conn.sendTransaction(tx, { skipPreflight: false, maxRetries: 3 });
+  await conn.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+  return { sig, sol: (bal - rentExempt) / 1e9 };
 }
