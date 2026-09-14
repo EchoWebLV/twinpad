@@ -22,6 +22,9 @@ poc/oft-twin/
 - Solana deployer / payer: `CbezAz2tauHMhacv2X4mcqWvML8hfUH1o683NiRtqNrG` (`.keys/solana-deployer.json`)
 - Robinhood deployer / owner: `0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3` (`.keys/evm-deployer.json`)
 - LayerZero eids: Solana mainnet 30168, Robinhood mainnet 30416 (testnet: 40168 / 40451)
+- Live on mainnet 2026-09-15: OFT Store (adapter) `DAnZXPCgrW1VLfKcUUBEJSCDkMNgjzaqSe9iPYjyaUHC`, escrow `5qsBmz6EYgN8HnBALLUiUK6taxYAyuXezJAZVLeovHCv`
+  (`lz/deployments/solana-mainnet/OFT.json`); LockstepOFT on Robinhood `0x0ABc9Ae77ca2e4b442D1c9a6A335bb2E15128f42`
+  (`lz/deployments/robinhood-mainnet/LockstepOFT.json`). The LSTP mint is Token-2022 (`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`).
 - Robinhood EndpointV2: `0x6F475642a6e85809B1c36Fa62763669b1b48DD5B`; Uniswap v4 PoolManager
   `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager `0x58daec3116aae6d93017baaea7749052e8a04fa7`,
   UniversalRouter `0x8876789976decbfcbbbe364623c63652db8c0904`
