@@ -8,6 +8,8 @@ import { newRecord, type LaunchRecord, type PaymentChain, type Quote } from "./r
 export interface CreateInput {
   name: string; symbol: string; description: string; twitter?: string; telegram?: string;
   devWallet: string; imageDataUrl: string;
+  /** Extra SOL the deployer adds to the dev buy (paid with the deposit; SOL deposits only). */
+  boostSol: number;
   /** "sol" (default): deposit in SOL from a Solana wallet. "eth": deposit in ETH on Robinhood Chain from an EVM wallet. */
   payChain: PaymentChain;
 }
@@ -15,7 +17,9 @@ export interface CreateInput {
 export interface CreateDeps {
   registry: Registry;
   pin: { file: (path: string, name: string) => Promise<string>; json: (obj: unknown, name: string) => Promise<string> };
-  quote: () => Promise<Quote>;
+  quote: (boostSol: number) => Promise<Quote>;
+  /** Upper bound for `boostSol`; 0 disables boosts. */
+  maxBoostSol: number;
   deadlineMin: number;
   now: () => number;
   /** Public web URL; the token website is always `<publicUrl>/coin/<id>` (empty → no website). */
@@ -26,7 +30,7 @@ const MAX_IMAGE = 2 * 1024 * 1024;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const JPG = Buffer.from([0xff, 0xd8, 0xff]);
 
-export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
+export function validateInput(raw: unknown, maxBoostSol = 0): CreateInput & { image: Buffer } {
   const i = (raw ?? {}) as Record<string, unknown>;
   const str = (k: string, max: number, required = false) => {
     const v = typeof i[k] === "string" ? (i[k] as string).trim() : "";
@@ -50,6 +54,11 @@ export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
       throw new Error("devWallet is not a Solana address");
     }
   }
+  const boostRaw = i.boostSol == null || i.boostSol === "" ? 0 : Number(i.boostSol);
+  if (!Number.isFinite(boostRaw) || boostRaw < 0) throw new Error("boostSol must be a non-negative number");
+  const boostSol = Math.round(boostRaw * 1e6) / 1e6;
+  if (boostSol > maxBoostSol) throw new Error(maxBoostSol > 0 ? `boostSol max ${maxBoostSol} SOL` : "boosts are off");
+  if (boostSol > 0 && payChain !== "sol") throw new Error("boostSol needs a SOL deposit");
   const url = typeof i.imageDataUrl === "string" ? i.imageDataUrl : "";
   const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(url);
   if (!m) throw new Error("image must be a PNG or JPEG data URL");
@@ -57,14 +66,14 @@ export function validateInput(raw: unknown): CreateInput & { image: Buffer } {
   if (image.length > MAX_IMAGE) throw new Error("image max 2 MB");
   if (!(image.subarray(0, 4).equals(PNG) || image.subarray(0, 3).equals(JPG))) throw new Error("image bytes are not PNG/JPEG");
   return {
-    name, symbol, description, devWallet, payChain, imageDataUrl: url, image,
+    name, symbol, description, devWallet, payChain, boostSol, imageDataUrl: url, image,
     twitter: str("twitter", 120), telegram: str("telegram", 120),
   };
 }
 
 /** Validate, store the image, pin image + metadata, generate keys, write the record. No chain calls. */
 export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchRecord> {
-  const input = validateInput(raw);
+  const input = validateInput(raw, d.maxBoostSol);
   const id = d.registry.newId(input.symbol);
   const website = d.publicUrl ? `${d.publicUrl}/coin/${id}` : "";
   fs.mkdirSync(d.registry.dir(id), { recursive: true });
@@ -96,7 +105,7 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
     deadlineAt: now + d.deadlineMin * 60_000,
     devWallet: input.devWallet,
     chain: input.payChain,
-    quote: await d.quote(),
+    quote: await d.quote(input.boostSol),
     token: {
       name: input.name, symbol: input.symbol, description: input.description,
       twitter: input.twitter ?? "", website, telegram: input.telegram ?? "",

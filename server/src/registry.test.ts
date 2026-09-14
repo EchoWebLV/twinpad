@@ -7,7 +7,7 @@ import { Registry } from "./registry.js";
 import { newRecord, transition, publicRecord, type Quote } from "./record.js";
 
 const quote: Quote = {
-  depositSol: 0.1, depositEth: 0.004, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1,
+  depositSol: 0.1, depositEth: 0.004, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, boostSol: 0, parityDevBuySol: 0, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1,
   makerCashEth: 0.01, openingFdv: 100, landing: { pump: 100, pons: 100 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 100, ETH: 2500 },
 };
 const token = { name: "Doggo", symbol: "DOGGO", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" };

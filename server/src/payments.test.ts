@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { reconcile } from "./payments.js";
 import { migrateRecord, newRecord } from "./record.js";
 
-const quote = { depositSol: 0.5, depositEth: 0.02, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02, openingFdv: 1, landing: { pump: 1, pons: 1 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 1, ETH: 1 } };
+const quote = { depositSol: 0.5, depositEth: 0.02, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, boostSol: 0, parityDevBuySol: 0, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02, openingFdv: 1, landing: { pump: 1, pons: 1 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 1, ETH: 1 } };
 const rec = () => newRecord({
   id: "a-0000", now: 0, deadlineAt: 1000, devWallet: "DEV", chain: "sol" as const, quote,
   token: { name: "A", symbol: "A", description: "d", twitter: "", website: "", telegram: "", imageCid: "i", metadataCid: "m", metadataUri: "u" },

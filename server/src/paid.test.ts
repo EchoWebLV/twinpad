@@ -13,10 +13,11 @@ function deps(): CreateDeps {
   return {
     registry: new Registry(fs.mkdtempSync(path.join(os.tmpdir(), "paid-"))),
     pin: { file: async () => "imgcid", json: async () => "metacid" },
-    quote: async () => ({
-      depositSol: 0.1, depositEth: 0.004, frontSol: 1, frontEth: 0.03, devBuySol: 0.87, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02,
+    quote: async (boostSol: number) => ({
+      depositSol: 0.1, depositEth: 0.004, frontSol: 1, frontEth: 0.03, devBuySol: 0.87 + boostSol, boostSol, parityDevBuySol: 6.6, pumpTokens: 1, ponsEth: 0.01, ponsTokens: 1, makerCashEth: 0.02,
       openingFdv: 100, landing: { pump: 100, pons: 100 }, supplyPct: { pump: 1, pons: 1 }, fx: { SOL: 100, ETH: 2500 },
     }),
+    maxBoostSol: 5,
     deadlineMin: 60,
     publicUrl: "https://pad.example",
     now: () => 1_000,
@@ -70,4 +71,22 @@ test("createLaunch writes record, keys and image", async () => {
   assert.equal(d.registry.get(rec.id)?.wallets.payment, rec.payment.address);
   assert.equal(rec.payment.chain, "sol");
   assert.equal(rec.payment.required, 0.1);
+});
+
+test("boostSol: bounded, SOL deposits only, rides in the deposit and the pool fronts it", async () => {
+  assert.throws(() => validateInput({ ...good, boostSol: 6 }, 5), /max 5/);
+  assert.throws(() => validateInput({ ...good, boostSol: 1 }, 0), /off/);
+  assert.throws(() => validateInput({ ...good, boostSol: -1 }, 5), /non-negative/);
+  assert.throws(() => validateInput({ ...good, boostSol: "abc" }, 5), /non-negative/);
+  assert.throws(() => validateInput({ ...good, payChain: "eth", devWallet: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", boostSol: 1 }, 5), /SOL deposit/);
+  assert.equal(validateInput({ ...good, boostSol: "" }, 5).boostSol, 0);
+  assert.equal(validateInput(good).boostSol, 0);
+  const d = deps();
+  const rec = await createLaunch(d, { ...good, boostSol: 2.5 });
+  assert.equal(rec.boostSol, 2.5);
+  assert.equal(rec.payment.required, 2.6); // deposit 0.1 + boost 2.5
+  assert.equal(rec.front.sol, 3.5); // pool part 1 + boost 2.5 go to the creator wallet
+  assert.equal(rec.quote.devBuySol, 3.37);
+  assert.equal(rec.front.topupEth, 0);
+  assert.equal(rec.front.retiredAt, null);
 });

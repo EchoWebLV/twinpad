@@ -5,12 +5,13 @@ import type { Registry } from "./registry.js";
 import type { CoinState } from "./coin.js";
 import { Maker } from "./maker.js";
 import { walletClient } from "./evm/pons.js";
+import type { Recovery } from "./recover.js";
 
 /** One Maker per live coin, armed when the coin appears (`engine_armed`). */
 export class Makers {
   private makers = new Map<string, Maker>();
   private coins = new Map<string, CoinState>();
-  constructor(private cfg: Config, private registry: Registry, private conn: Connection, private pub: PublicClient) {}
+  constructor(private cfg: Config, private registry: Registry, private conn: Connection, private pub: PublicClient, private recovery?: Recovery) {}
 
   register(coin: CoinState) {
     this.coins.set(coin.id, coin);
@@ -20,7 +21,7 @@ export class Makers {
     this.register(coin);
     if (this.makers.has(coin.id) || !this.cfg.maker.enabled) return;
     const keys = this.registry.keys(coin.id);
-    const m = new Maker(this.cfg, coin, this.conn, Keypair.fromSecretKey(Uint8Array.from(keys.solCreator)), this.pub, walletClient(this.cfg.evm.rpcUrl, keys.evmMaker));
+    const m = new Maker(this.cfg, coin, this.conn, Keypair.fromSecretKey(Uint8Array.from(keys.solCreator)), this.pub, walletClient(this.cfg.evm.rpcUrl, keys.evmMaker), this.recovery);
     this.makers.set(coin.id, m);
     m.start();
     console.log(`[maker ${coin.id}] armed`);

@@ -137,6 +137,11 @@ export default function LaunchPage() {
                 <a className="lnk" href={PUMP(l.wallets.pumpMint)} target="_blank" rel="noreferrer">pump.fun ↗</a>
                 {l.launch.ponsToken && <a className="lnk" href={PONS(l.launch.ponsToken)} target="_blank" rel="noreferrer">Pons ↗</a>}
               </div>
+              <p className="mute" style={{ marginTop: 12 }}>
+                Front recovered: {l.front.repaidSol.toFixed(3)} of {l.front.sol} SOL · {l.front.repaidEth.toFixed(4)} of {l.front.eth} ETH
+                {l.front.topupEth > 0 && <> (incl. {l.front.topupEth} ETH topped up)</>}
+                {l.front.retiredAt && <> · <span className="y">front retired</span></>}
+              </p>
               {R && (
                 <p className="dim" style={{ marginTop: 14, fontSize: 12 }}>
                   {R.keep
@@ -155,7 +160,8 @@ export default function LaunchPage() {
               <h2>{l.status === "closed" ? "Closed" : "Closing"}</h2>
               <p className="mute">{R?.reason ?? "The pool is exiting this coin."}</p>
               {R && R.evaluated && <p className="mute" style={{ marginTop: 8 }}>Interest check: {R.evaluated.outsideBuyers} outside holders, ${R.evaluated.outsideUsd.toFixed(0)} held (needed {R.policy.minBuyers} or ${R.policy.minUsd}).</p>}
-              {R && (R.swept.sol > 0 || R.swept.eth > 0) && <p className="mute" style={{ marginTop: 8 }}>Recovered {R.swept.sol.toFixed(4)} SOL + {R.swept.eth.toFixed(5)} ETH of {l.front.sol} SOL + {l.front.eth} ETH fronted.</p>}
+              {(l.front.repaidSol > 0 || l.front.repaidEth > 0) && <p className="mute" style={{ marginTop: 8 }}>Recovered {l.front.repaidSol.toFixed(4)} SOL + {l.front.repaidEth.toFixed(5)} ETH of {l.front.sol} SOL + {l.front.eth} ETH fronted{R && (R.swept.sol > 0 || R.swept.eth > 0) ? ` (${R.swept.sol.toFixed(4)} SOL + ${R.swept.eth.toFixed(5)} ETH at close)` : ""}.</p>}
+              {l.boostSol > 0 && <p className="mute" style={{ marginTop: 8 }}>Your {l.boostSol} SOL boost: {l.refund.paid > 0 ? `${l.refund.paid} SOL refunded to your wallet` : "refund pending"}.</p>}
               {R?.error && <p className="err">{R.error}</p>}
               <p className="dim" style={{ marginTop: 10, fontSize: 12 }}>The tokens stay tradable on pump.fun and Pons; only the pool's market maker has left.</p>
             </div>
@@ -228,6 +234,8 @@ export default function LaunchPage() {
             <span className="cap">Sizing</span>
             <div className="kv"><span>Deposit</span><b>{l.payment.required} {unit}</b></div>
             <div className="kv"><span>Pool fronts</span><b>{l.quote.frontSol} SOL + {l.quote.frontEth} ETH</b></div>
+            {l.boostSol > 0 && <div className="kv"><span>Your boost</span><b>{l.boostSol} SOL</b></div>}
+            <div className="kv"><span>Dev buy</span><b>{l.quote.devBuySol} SOL</b></div>
             <div className="kv"><span>Opening FDV</span><b className="y">{usd(l.quote.openingFdv)}</b></div>
             <div className="kv"><span>Landing</span><b>pump {usd(l.quote.landing.pump)} <span className="dim">/</span> pons {usd(l.quote.landing.pons)}</b></div>
             <div className="kv"><span>Maker inventory</span><b>{l.quote.supplyPct.pump}% · {l.quote.supplyPct.pons}%</b></div>

@@ -47,8 +47,14 @@ export const config = {
   launch: {
     depositSol: num("DEPOSIT_SOL", 0.5),
     depositDeadlineMin: num("DEPOSIT_DEADLINE_MIN", 60),
+    /** Ceilings for what the pool fronts one launch. With AUTO_SIZE the actual front is what the pool can spare per open slot, between the min and these. */
     frontSol: num("FRONT_SOL", 13.8),
     frontEth: num("FRONT_ETH", 0.33),
+    frontSolMin: num("FRONT_SOL_MIN", 0.6),
+    frontEthMin: num("FRONT_ETH_MIN", 0.03),
+    autoSize: bool("AUTO_SIZE", true),
+    /** Deployers may add up to this much SOL to the dev buy on top of the deposit. 0 disables boosts. */
+    maxBoostSol: num("MAX_BOOST_SOL", 20),
     solGasBudget: num("SOL_GAS_BUDGET", 0.13),
     evmGasLauncher: num("EVM_GAS_LAUNCHER", 0.012),
     evmMakerCash: num("EVM_MAKER_CASH", 0.01),
@@ -67,6 +73,16 @@ export const config = {
     minBuyers: num("RETIRE_MIN_BUYERS", 5),
     minUsd: num("RETIRE_MIN_USD", 100),
     selldownMin: num("RETIRE_SELLDOWN_MIN", 45),
+  },
+  /** Front recovery: sell clips above entry until the front is repaid, sweep surplus quote to the pool, top the maker's ETH up when Pons demand drains it. */
+  recover: {
+    enabled: bool("RECOVER_ENABLED", true),
+    /** Harvest sells only at entry × (1 + margin). */
+    margin: num("RECOVER_MARGIN", 0.1),
+    /** Quote kept in each maker wallet: MAKER_MIN_* plus this many clips. Anything above goes back to the pool. */
+    keepClips: num("RECOVER_KEEP_CLIPS", 4),
+    topupEth: num("TOPUP_ETH", 0.02),
+    maxTopupEthPerCoin: num("MAX_TOPUP_ETH_PER_COIN", 0.2),
   },
   /** Loss budgets in USD (fronted value − current inventory value). Coin: halt that maker. Pool: halt every maker and stop approving. */
   guard: {

@@ -7,7 +7,8 @@ import { publicClient, launchPreflight, PONS } from "./evm/pons.js";
 import { fx } from "./fx.js";
 import { pinFile, pinJson } from "./ipfs.js";
 import { createLaunch } from "./paid.js";
-import { buildQuote } from "./quote.js";
+import { buildQuote, sizeFront } from "./quote.js";
+import { Recovery } from "./recover.js";
 import { ETH_TX_HASH, PaymentWatcher, refundDeposit } from "./payments.js";
 import { Scheduler, approve, reject } from "./scheduler.js";
 import { runLaunch } from "./launcher.js";
@@ -33,7 +34,7 @@ async function main() {
 
   // ---- live coins
   const coins = new Map<string, CoinState>();
-  const makers = new Makers(config, registry, conn, pub);
+  const makers = new Makers(config, registry, conn, pub, new Recovery({ cfg: config, registry, pool, conn, pub }));
   const mount = (rec: LaunchRecord) => {
     if (coins.has(rec.id)) return coins.get(rec.id)!;
     const c = new CoinState(
@@ -42,6 +43,8 @@ async function main() {
       { name: rec.token.name, symbol: rec.token.symbol, image: `https://gateway.pinata.cloud/ipfs/${rec.token.imageCid}`, twitter: rec.token.twitter, website: rec.token.website, description: rec.token.description },
     );
     c.front = { sol: rec.front.sol, eth: rec.front.eth };
+    c.repaid = { sol: rec.front.repaidSol, eth: rec.front.repaidEth };
+    c.retiredAt = rec.front.retiredAt;
     c.entryPrice = rec.seed ? rec.seed.openingFdv / 1e9 : 0;
     if (!rec.retire) { rec.retire = newRetire(rec.launch.launchedAt ?? Date.now(), config.retire); registry.save(rec); }
     coins.set(rec.id, c);
@@ -56,14 +59,44 @@ async function main() {
   for (const rec of registry.list({ status: ["live"] })) mount(rec);
   new Poller(conn, pub, () => [...coins.values()]).start();
 
-  // ---- quote from live chain params
-  const quoteNow = async () => {
+  // ---- quote from live chain params. AUTO_SIZE: the pool fronts what it can spare per open slot, between
+  // FRONT_*_MIN and FRONT_*; SOL never above the parity dev buy (pump.fun landing on the Pons floor) since
+  // beyond that the ETH side would have to grow too. A deployer boost sits on top of the pool's part.
+  let balancesAt = 0, balancesMemo = { sol: 0, eth: 0 };
+  const poolBalances = async () => {
+    if (Date.now() - balancesAt > 15_000) { balancesMemo = await pool.balances(); balancesAt = Date.now(); }
+    return balancesMemo;
+  };
+  const freeNow = async (launchFee: number) => {
+    const b = await poolBalances();
+    const drawing = registry.list({ status: ["paid", "approved", "launching"] }).filter((r) => !r.front.at);
+    const perLaunchEth = launchFee + config.launch.evmGasLauncher;
+    const reservedSol = drawing.reduce((s, r) => s + r.front.sol - r.boostSol, 0);
+    const reservedEth = drawing.reduce((s, r) => s + r.front.eth + perLaunchEth, 0);
+    const busy = registry.list({ status: ["live", "launching", "approved", "paid"] }).length;
+    return { sol: b.sol - config.pool.minSol - reservedSol, eth: b.eth - config.pool.minEth - reservedEth - perLaunchEth, slots: Math.max(1, config.launch.maxLiveMakers - busy), balances: b };
+  };
+  const quoteNow = async (boostSol = 0) => {
     const [rates, pf] = await Promise.all([fx(), launchPreflight(pub, PONS.ZERO)]);
+    const pons = { phantomEth: Number(formatEther(pf.config.phantomQuote)), supply: Number(formatEther(pf.config.supply)), feeBps: Number(pf.config.curveFeeBps), creatorTaxBps: config.evm.creatorTaxBps };
+    let front = { sol: config.launch.frontSol, eth: config.launch.frontEth };
+    if (config.launch.autoSize) {
+      const free = await freeNow(Number(formatEther(pf.launchFee)));
+      const parity = buildQuote({ depositSol: 0, frontSol: 1, frontEth: 1, solGasBudget: 0, evmMakerCash: 0, fx: rates, pons }).parityDevBuySol;
+      const maxSol = Math.min(config.launch.frontSol, parity + config.launch.solGasBudget);
+      front = sizeFront(free, { sol: config.launch.frontSolMin, eth: config.launch.frontEthMin }, { sol: maxSol, eth: config.launch.frontEth });
+    }
     return buildQuote({
-      depositSol: config.launch.depositSol, frontSol: config.launch.frontSol, frontEth: config.launch.frontEth,
-      solGasBudget: config.launch.solGasBudget, evmMakerCash: config.launch.evmMakerCash, fx: rates,
-      pons: { phantomEth: Number(formatEther(pf.config.phantomQuote)), supply: Number(formatEther(pf.config.supply)), feeBps: Number(pf.config.curveFeeBps), creatorTaxBps: config.evm.creatorTaxBps },
+      depositSol: config.launch.depositSol, frontSol: front.sol, frontEth: front.eth, boostSol,
+      solGasBudget: config.launch.solGasBudget, evmMakerCash: config.launch.evmMakerCash, fx: rates, pons,
     });
+  };
+  /** True when the pool cannot front even the minimum right now (nothing is reserved for the caller). */
+  const poolShort = async () => {
+    if (!config.launch.autoSize) return false;
+    const pf = await launchPreflight(pub, PONS.ZERO);
+    const free = await freeNow(Number(formatEther(pf.launchFee)));
+    return free.sol < config.launch.frontSolMin || free.eth < config.launch.frontEthMin;
   };
 
   // ---- launches
@@ -121,14 +154,19 @@ async function main() {
     return c.snapshot(r === "1h" || r === "6h" ? r : "24h");
   });
   router.get("/api/paid", () => registry.list().map(publicRecord));
-  router.get("/api/paid/quote", () => quoteNow());
+  router.get("/api/paid/quote", (_p, _b, h) => {
+    const boost = Number(query(h).boost ?? 0);
+    if (!Number.isFinite(boost) || boost < 0 || boost > config.launch.maxBoostSol) throw new HttpError(400, `boost must be 0..${config.launch.maxBoostSol} SOL`);
+    return quoteNow(boost);
+  });
   router.get("/api/paid/:id", (p) => publicRecord(rec(p.id)));
   router.post("/api/paid", async (_p, body, _h, ip) => {
     if (!limiter.allow(ip)) throw new HttpError(429, "one launch per minute per address");
     if (registry.list({ status: OPEN_STATUSES }).length >= config.launch.maxOpenLaunches) throw new HttpError(503, "launches are full right now");
     if (!config.pinataJwt) throw new HttpError(503, "PINATA_JWT not configured");
+    if (await poolShort()) throw new HttpError(503, "the pool cannot front a launch right now; try again later");
     return createLaunch({
-      registry, deadlineMin: config.launch.depositDeadlineMin, now: Date.now, quote: quoteNow, publicUrl: config.server.publicUrl,
+      registry, deadlineMin: config.launch.depositDeadlineMin, now: Date.now, quote: quoteNow, maxBoostSol: config.launch.maxBoostSol, publicUrl: config.server.publicUrl,
       pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) },
     }, body);
   });
@@ -202,7 +240,10 @@ async function main() {
     for (const c of coins.values()) makers.resume(c.id);
     return { ok: true, paused: scheduler.paused };
   }, { admin: true });
-  router.get("/api/admin/pool/status", () => ({ paused: scheduler.paused, closing: [...closing], lossUsd: [...coins.values()].map((c) => ({ id: c.id, lossUsd: c.maker.lossUsd, mode: c.maker.mode })) }), { admin: true });
+  router.get("/api/admin/pool/status", () => ({
+    paused: scheduler.paused, closing: [...closing],
+    coins: [...coins.values()].map((c) => ({ id: c.id, lossUsd: c.maker.lossUsd, mode: c.maker.mode, front: c.front, repaid: c.repaid, retiredAt: c.retiredAt })),
+  }), { admin: true });
 
   serve(router, config.server.port, config.server.corsOrigin);
 }

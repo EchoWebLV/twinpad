@@ -25,14 +25,15 @@ export function decide(r: Retire, a: Activity | null, now: number): Verdict {
   return r.selldownUntil !== null && now >= r.selldownUntil ? "finish" : "selldown";
 }
 
-/** Fronted value minus what the maker still holds, in USD. Positive = the pool is down that much on this coin. */
+/** Fronted value minus what the maker still holds minus what already came back to the pool, in USD. Positive = the pool is down that much on this coin. */
 export function lossUsd(
   front: { sol: number; eth: number },
   inv: { solana: { sol: number; tokens: number }; evm: { eth: number; tokens: number; escrowEth: number } },
   price: { pump: number; pons: number },
   fx: { SOL: number; ETH: number },
+  repaid: { sol: number; eth: number } = { sol: 0, eth: 0 },
 ): number {
-  const fronted = front.sol * fx.SOL + front.eth * fx.ETH;
+  const fronted = (front.sol - repaid.sol) * fx.SOL + (front.eth - repaid.eth) * fx.ETH;
   const held = (inv.solana.sol + inv.solana.tokens * price.pump / fx.SOL) * fx.SOL
     + (inv.evm.eth + inv.evm.escrowEth + inv.evm.tokens * price.pons / fx.ETH) * fx.ETH;
   return fronted - held;

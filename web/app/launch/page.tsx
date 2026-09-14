@@ -9,15 +9,22 @@ export default function LaunchForm() {
   const router = useRouter();
   const [q, setQ] = useState<Quote | null>(null);
   const [f, setF] = useState({ name: "", symbol: "", description: "", twitter: "", telegram: "", devWallet: "" });
+  const [boost, setBoost] = useState("");
   const [image, setImage] = useState<string>("");
   const [chain, setChain] = useState<PayChain>("sol");
   const [connected, setConnected] = useState<{ key: string; address: string } | null>(null);
   const wallets = useWallets();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const boostSol = chain === "sol" && Number.isFinite(Number(boost)) && Number(boost) > 0 ? Number(boost) : 0;
   useEffect(() => {
-    getJson<Quote>("/api/paid/quote").then(setQ).catch((e) => setErr((e as Error).message));
-  }, []);
+    let live = true;
+    const t = setTimeout(() => {
+      getJson<Quote>(`/api/paid/quote?boost=${boostSol}`).then((r) => { if (live) { setQ(r); setErr(null); } }).catch((e) => { if (live) setErr((e as Error).message); });
+    }, boostSol ? 350 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [boostSol]);
+  const payTotal = q ? Math.round((q.depositSol + q.boostSol) * 1e6) / 1e6 : 0;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") : e.target.value });
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,13 +53,13 @@ export default function LaunchForm() {
     setConnected(null);
     setF((prev) => ({ ...prev, devWallet: "" }));
   };
-  const payLine = (c: PayChain) => (c === "sol" ? `pay ${q ? `${q.depositSol} SOL` : "SOL"} on Solana` : `pay ${q ? `${q.depositEth} ETH` : "ETH"} on Robinhood Chain`);
+  const payLine = (c: PayChain) => (c === "sol" ? `pay ${q ? `${payTotal} SOL` : "SOL"} on Solana` : `pay ${q ? `${q.depositEth} ETH` : "ETH"} on Robinhood Chain`);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setErr(null);
     try {
-      const rec = await postJson<Launch>("/api/paid", { ...f, payChain: chain, imageDataUrl: image });
+      const rec = await postJson<Launch>("/api/paid", { ...f, payChain: chain, boostSol, imageDataUrl: image });
       router.push(`/launch/${rec.id}`);
     } catch (er) {
       setErr((er as Error).message);
@@ -112,10 +119,17 @@ export default function LaunchForm() {
             </span>
             <input required placeholder={chain === "sol" ? "Solana address · pays the deposit and receives refunds" : "0x… · pays the deposit and receives refunds"} value={f.devWallet} onChange={(e) => { setConnected(null); set("devWallet")(e); }} />
           </label>
+          {chain === "sol" && (
+            <label>
+              <span style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>Boost the dev buy <small className="dim">optional · SOL on top of the deposit</small></span>
+              <input type="number" min={0} step={0.1} inputMode="decimal" placeholder="0" value={boost} onChange={(e) => setBoost(e.target.value)} />
+              <small className="dim">Goes straight into your coin's pump.fun dev buy next to the pool's own SOL. Comes back to your wallet pro-rata when the pool exits the coin.</small>
+            </label>
+          )}
           {err && <p className="err" style={{ marginBottom: 14 }}>{err}</p>}
           <div className="actions">
             <button className="btn y" disabled={busy || !image}>{busy ? "Creating" : "Create launch"} <span className="ar">→</span></button>
-            <span className="mute" style={{ fontSize: 13 }}>Next step: pay {q ? (chain === "sol" ? `${q.depositSol} SOL` : `${q.depositEth} ETH`) : "the deposit"} from the wallet above.</span>
+            <span className="mute" style={{ fontSize: 13 }}>Next step: pay {q ? (chain === "sol" ? `${payTotal} SOL` : `${q.depositEth} ETH`) : "the deposit"} from the wallet above.</span>
           </div>
         </form>
         <div className="sticky stack">
@@ -128,7 +142,8 @@ export default function LaunchForm() {
             <span className="cap">03 · Your deposit</span>
             {q ? (
               <>
-                <div className="kv"><span>You deposit</span><b>{chain === "sol" ? `${q.depositSol} SOL` : `${q.depositEth} ETH`} <span className="mute">≈ {usd(q.depositSol * q.fx.SOL)}</span></b></div>
+                <div className="kv"><span>You pay</span><b>{chain === "sol" ? `${payTotal} SOL` : `${q.depositEth} ETH`} <span className="mute">≈ {usd((chain === "sol" ? payTotal : q.depositSol) * q.fx.SOL)}</span></b></div>
+                {q.boostSol > 0 && <div className="kv"><span>of which your boost</span><b>{q.boostSol} SOL</b></div>}
                 <div className="kv"><span>Paid on</span><b>{chain === "sol" ? "Solana" : "Robinhood Chain"}</b></div>
                 <div className="kv"><span>Pool fronts on Solana</span><b>{q.frontSol} SOL</b></div>
                 <div className="kv"><span>Pool fronts on Robinhood</span><b>{q.frontEth} ETH</b></div>
@@ -138,6 +153,7 @@ export default function LaunchForm() {
                 <div className="kv"><span>Landing</span><b>pump {usd(q.landing.pump)} <span className="dim">/</span> pons {usd(q.landing.pons)}</b></div>
               </>
             ) : <p className="mute"><i className="ld" />loading quote</p>}
+            {q && <p className="dim" style={{ marginTop: 12, fontSize: 12 }}>The pool sizes its front from what it has free right now, so this quote moves with the pool. Parity with the Pons floor takes a {q.parityDevBuySol} SOL dev buy.</p>}
           </div>
         </div>
       </div>

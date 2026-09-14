@@ -22,7 +22,7 @@ export interface LaunchCtx {
 }
 
 /**
- * Run one launch from its per-coin wallets. Copies TWINE V2 (spec §10.5): fronting → deposit to pool →
+ * Run one launch from its per-coin wallets. Copies TWINE V2 (spec §10.5): deposit to pool → fronting →
  * pump.fun create + dev buy (creator = maker on Solana) → Pons launchToken from the launcher with the
  * maker as creatorFeeRecipient and exemptions [launcher, maker] → maker curve buy sized to land at the
  * pump.fun fdv → live. Sets status failed with `launch.error` on any throw; retry re-enters here.
@@ -56,15 +56,29 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     if (!pf.canLaunch || !pf.launchEnabled || !pf.config.enabled) throw new Error("Pons factory refuses launches right now");
     const launchFee = Number(formatEther(pf.launchFee));
     const needEth = launchFee + ctx.cfg.launch.evmGasLauncher + rec.front.eth;
-    if (!L.txs.frontSol || !L.txs.frontRhMaker) {
-      const can = await ctx.pool.canFront(rec.front.sol, needEth);
-      if (!can.ok) throw new Error(`pool below floor: ${JSON.stringify(can.balances)} needs ${rec.front.sol} SOL + ${needEth.toFixed(4)} ETH`);
-    }
     if (!L.salt) L.salt = `0x${crypto.randomBytes(32).toString("hex")}`;
     step(rec, "preflight", now(), { launchFee, canLaunch: pf.canLaunch });
     save();
 
-    // ---- fronting: pool → creator (SOL), pool → launcher (fee + gas), pool → maker (front.eth)
+    // ---- deposit → pool first: a deployer boost rides in the deposit and the pool fronts it right back
+    if (!rec.payment.toPoolTx) {
+      if (rec.payment.chain === "eth") {
+        const swept = await sweepEth(ctx.pub, ctx.cfg.evm.rpcUrl, keys.evmPayment, ctx.pool.evmAddress);
+        rec.payment.toPoolTx = swept?.sig ?? "none";
+        step(rec, "deposit_to_pool", now(), { amount: swept?.eth ?? 0, unit: "ETH", tx: swept?.sig ?? null });
+      } else {
+        const swept = await sweepSol(ctx.conn, payKp, ctx.pool.sol.publicKey);
+        rec.payment.toPoolTx = swept?.sig ?? "none";
+        step(rec, "deposit_to_pool", now(), { amount: swept?.sol ?? 0, unit: "SOL", tx: swept?.sig ?? null });
+      }
+      save();
+    }
+    if (!L.txs.frontSol || !L.txs.frontRhMaker) {
+      const can = await ctx.pool.canFront(rec.front.sol, needEth);
+      if (!can.ok) throw new Error(`pool below floor: ${JSON.stringify(can.balances)} needs ${rec.front.sol} SOL + ${needEth.toFixed(4)} ETH`);
+    }
+
+    // ---- fronting: pool → creator (SOL, incl. the deployer boost), pool → launcher (fee + gas), pool → maker (front.eth)
     if (!L.txs.frontSol) {
       L.txs.frontSol = await ctx.pool.transferSol(creator.publicKey, rec.front.sol);
       save();
@@ -79,21 +93,7 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     }
     if (!rec.front.at) {
       rec.front = { ...rec.front, at: now(), txSol: L.txs.frontSol, txRhLauncher: L.txs.frontRhLauncher, txRhMaker: L.txs.frontRhMaker };
-      step(rec, "fronting", now(), { sol: rec.front.sol, eth: rec.front.eth, txSol: L.txs.frontSol, txRh: L.txs.frontRhMaker });
-      save();
-    }
-
-    // ---- deposit → pool
-    if (!rec.payment.toPoolTx) {
-      if (rec.payment.chain === "eth") {
-        const swept = await sweepEth(ctx.pub, ctx.cfg.evm.rpcUrl, keys.evmPayment, ctx.pool.evmAddress);
-        rec.payment.toPoolTx = swept?.sig ?? "none";
-        step(rec, "deposit_to_pool", now(), { amount: swept?.eth ?? 0, unit: "ETH", tx: swept?.sig ?? null });
-      } else {
-        const swept = await sweepSol(ctx.conn, payKp, ctx.pool.sol.publicKey);
-        rec.payment.toPoolTx = swept?.sig ?? "none";
-        step(rec, "deposit_to_pool", now(), { amount: swept?.sol ?? 0, unit: "SOL", tx: swept?.sig ?? null });
-      }
+      step(rec, "fronting", now(), { sol: rec.front.sol, boostSol: rec.boostSol, eth: rec.front.eth, txSol: L.txs.frontSol, txRh: L.txs.frontRhMaker });
       save();
     }
     step(rec, "funded", now(), { makerSol: rec.front.sol, makerEth: rec.front.eth });

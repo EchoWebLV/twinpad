@@ -36,10 +36,37 @@ export function tokensOut(Q: number, T: number, net: number) {
   return T - (Q * T) / (Q + net);
 }
 
+export interface FrontLimits { sol: number; eth: number }
+
+/**
+ * What the pool fronts one launch: an equal share of what is free above the floor for the open
+ * maker slots, clamped to [min, max]. Pure; the caller measures `free`.
+ */
+export function sizeFront(free: { sol: number; eth: number; slots: number }, min: FrontLimits, max: FrontLimits): FrontLimits {
+  const slots = Math.max(1, Math.floor(free.slots));
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  return { sol: round(clamp(free.sol / slots, min.sol, max.sol), 4), eth: round(clamp(free.eth / slots, min.eth, max.eth), 6) };
+}
+
+/**
+ * Gross dev buy (SOL) that lands a fresh pump.fun curve at `fdvUsd`, e.g. the Pons floor
+ * (phantom ETH × ETH price). 0 when the curve already opens above it.
+ */
+export function parityDevBuySol(fdvUsd: number, solUsd: number, feeBps = PUMP_FEE_BPS): number {
+  if (!(fdvUsd > 0) || !(solUsd > 0)) return 0;
+  const fdvSol = fdvUsd / solUsd;
+  const k = PUMP_VIRTUAL_SOL * PUMP_VIRTUAL_TOKENS;
+  const q = Math.sqrt((fdvSol * k) / TOTAL_SUPPLY);
+  const net = q - PUMP_VIRTUAL_SOL;
+  return net > 0 ? round(net / (1 - feeBps / 10_000), 4) : 0;
+}
+
 export interface QuoteInputs {
   depositSol: number;
   frontSol: number;
   frontEth: number;
+  /** Deployer's extra dev buy, on top of frontSol. */
+  boostSol?: number;
   solGasBudget: number;
   evmMakerCash: number;
   fx: { SOL: number; ETH: number };
@@ -48,7 +75,8 @@ export interface QuoteInputs {
 
 /** Pre-launch sizing shown to the deployer and stored on the record. */
 export function buildQuote(i: QuoteInputs): Quote {
-  const devBuySol = round(i.frontSol - i.solGasBudget, 4);
+  const boostSol = round(i.boostSol ?? 0, 6);
+  const devBuySol = round(i.frontSol + boostSol - i.solGasBudget, 4);
   const pump = pumpLanding(devBuySol);
   const targetUsd = pump.fdvSol * i.fx.SOL;
   const targetEth = targetUsd / i.fx.ETH;
@@ -69,6 +97,8 @@ export function buildQuote(i: QuoteInputs): Quote {
     ponsEth,
     ponsTokens: Math.round(ponsTokens),
     makerCashEth: round(i.frontEth - ponsEth, 6),
+    boostSol,
+    parityDevBuySol: parityDevBuySol(i.pons.phantomEth * i.fx.ETH, i.fx.SOL),
     openingFdv: Math.round(targetUsd),
     landing: { pump: Math.round(targetUsd), pons: Math.round(ponsFdvEth * i.fx.ETH) },
     supplyPct: { pump: round((100 * pump.tokens) / TOTAL_SUPPLY, 2), pons: round((100 * ponsTokens) / i.pons.supply, 2) },

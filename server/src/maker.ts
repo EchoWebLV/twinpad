@@ -6,6 +6,7 @@ import { escrowAbi, PONS } from "./evm/pons.js";
 import { evmBalances, evmBuy, evmSell, solanaBalances, solanaBuy, solanaSell } from "./trade.js";
 import { lossUsd } from "./exit.js";
 import { alert } from "./alerts.js";
+import type { Recovery } from "./recover.js";
 
 /**
  * The TWINE-style peg: whenever the two FDVs drift apart by more than `band`,
@@ -25,6 +26,7 @@ export class Maker {
     private solWallet: Keypair,
     private pub: PublicClient,
     private evmWallet: WalletClient,
+    private recovery?: Recovery,
   ) {}
 
   start() {
@@ -90,7 +92,7 @@ export class Maker {
   private guard(inv: NonNullable<CoinState["inventory"]>): boolean {
     const st = this.coin;
     if (!st.pump || !st.pons || !st.fx.SOL || !st.fx.ETH) return false;
-    const loss = lossUsd(st.front, inv, { pump: st.pump.price, pons: st.pons.price }, st.fx);
+    const loss = lossUsd(st.front, inv, { pump: st.pump.price, pons: st.pons.price }, st.fx, st.repaid);
     st.maker.lossUsd = Math.round(loss * 100) / 100;
     if (loss <= this.cfg.guard.maxLossUsdPerCoin) return false;
     st.maker.halted = true;
@@ -122,6 +124,29 @@ export class Maker {
     st.persist();
   }
 
+  /**
+   * Front recovery, peg mode, inside the band: while a side's front is not repaid and that side trades
+   * at entry × (1 + RECOVER_MARGIN) or better, sell one clip of the dev-buy pile into the demand.
+   * The quote it raises is swept to the pool by `Recovery` once it passes the keep level.
+   */
+  private async harvest(inv: NonNullable<CoinState["inventory"]>) {
+    const st = this.coin;
+    if (!this.cfg.recover.enabled || !st.pump || !st.pons || !st.entryPrice) return;
+    const floor = st.entryPrice * (1 + this.cfg.recover.margin);
+    const clipUsd = this.cfg.maker.maxClipUsd;
+    const o = { slippagePct: this.cfg.solana.slippagePct, priorityFeeSol: this.cfg.solana.priorityFeeSol };
+    if (st.repaid.sol < st.front.sol && inv.solana.tokens >= 1 && st.pump.price >= floor) {
+      const tokens = Math.min(inv.solana.tokens, clipUsd / st.pump.price);
+      const reason = `harvest: pump +${(100 * (st.pump.price / st.entryPrice - 1)).toFixed(1)}% over entry, ${st.repaid.sol.toFixed(3)} of ${st.front.sol} SOL repaid`;
+      await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, new PublicKey(st.pair.pumpMint), tokens, o));
+    }
+    if (st.repaid.eth < st.front.eth && inv.evm.tokens >= 1 && st.pons.price >= floor) {
+      const tokens = Math.min(inv.evm.tokens, clipUsd / st.pons.price);
+      const reason = `harvest: pons +${(100 * (st.pons.price / st.entryPrice - 1)).toFixed(1)}% over entry, ${st.repaid.eth.toFixed(4)} of ${st.front.eth} ETH repaid`;
+      await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, getAddress(st.pair.ponsToken) as Address, tokens, this.cfg.solana.slippagePct));
+    }
+  }
+
   async tick() {
     const st = this.coin;
     st.maker.ticks++;
@@ -134,6 +159,9 @@ export class Maker {
     if (st.maker.mode === "selldown") return this.selldownTick(inv);
     if (g.gap <= this.cfg.maker.band) {
       st.maker.consecutiveErrors = 0;
+      await this.harvest(inv);
+      await this.recover(inv);
+      st.persist();
       return;
     }
     // Clip scales with how far outside the band we are, capped at 3× the base clip.
@@ -165,7 +193,18 @@ export class Maker {
       if (inv.evm.eth - eth >= this.cfg.maker.minEth) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
       else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
     }
+    await this.recover(inv);
     st.persist();
+  }
+
+  /** Sweep surplus quote to the pool / top ETH up. Its errors are logged, not counted against the maker. */
+  private async recover(inv: NonNullable<CoinState["inventory"]>) {
+    if (!this.recovery) return;
+    try {
+      await this.recovery.afterTick(this.coin, inv, { sol: this.solWallet, evm: this.evmWallet });
+    } catch (e) {
+      console.error(`[recover ${this.coin.id}] ${(e as Error).message.split("\n")[0].slice(0, 200)}`);
+    }
   }
 
   private skip(side: "pump" | "pons", action: "buy" | "sell", reason: string, why: string) {

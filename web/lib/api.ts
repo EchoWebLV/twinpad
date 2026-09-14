@@ -19,7 +19,7 @@ export async function postJson<T>(path: string, body: unknown, admin?: string): 
 }
 
 export interface Quote {
-  depositSol: number; depositEth: number; frontSol: number; frontEth: number; devBuySol: number; ponsEth: number; openingFdv: number;
+  depositSol: number; depositEth: number; frontSol: number; frontEth: number; devBuySol: number; boostSol: number; parityDevBuySol: number; ponsEth: number; openingFdv: number;
   landing: { pump: number; pons: number }; supplyPct: { pump: number; pons: number }; fx: { SOL: number; ETH: number };
 }
 export interface Step { at: number; name: string; [k: string]: unknown }
@@ -27,15 +27,16 @@ export interface Launch {
   id: string; createdAt: number; status: string;
   token: { name: string; symbol: string; description: string; imageCid: string; twitter: string; website: string; telegram: string };
   devWallet: string;
+  boostSol: number;
   wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
   payment: {
     chain: "sol" | "eth"; unit: "SOL" | "ETH"; address: string; required: number; received: number; paidAt: number | null; deadlineAt: number;
     txs: { tx: string; amount: number; late: boolean }[]; foreign: { tx: string; amount: number }[]; claimed: string[];
   };
   approval: { status: string; at: number | null; note: string | null; auto: boolean };
-  front: { sol: number; eth: number; at: number | null };
+  front: { sol: number; eth: number; at: number | null; repaidSol: number; repaidEth: number; topupEth: number; retiredAt: number | null };
   launch: { steps: Step[]; pumpMint: string | null; ponsToken: string | null; error: string | null; retries: number };
-  refund: { amount: number; txs: string[] };
+  refund: { amount: number; paid: number; txs: string[] };
   retire: {
     decideAt: number; policy: { afterMin: number; minBuyers: number; minUsd: number; selldownMin: number }; keep: boolean;
     evaluated: { at: number; outsideBuyers: number; outsideUsd: number; verdict: "keep" | "full" | "selldown" } | null;

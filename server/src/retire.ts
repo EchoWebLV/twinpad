@@ -112,12 +112,27 @@ export async function closeCoin(ctx: RetireCtx, rec: LaunchRecord, reason: strin
       }
     }
 
+    // ---- deployer boost: its share of everything that came back, to the dev wallet
+    if (rec.boostSol > 0 && rec.payment.chain === "sol" && rec.front.sol > 0) {
+      const share = Math.round((rec.front.repaidSol * rec.boostSol / rec.front.sol) * 1e6) / 1e6;
+      const due = Math.round((share - rec.refund.paid) * 1e6) / 1e6;
+      if (due >= 0.001) {
+        const sig = await ctx.pool.transferSol(new PublicKey(rec.devWallet), due);
+        rec.refund.amount = share;
+        rec.refund.paid = Math.round((rec.refund.paid + due) * 1e6) / 1e6;
+        rec.refund.txs.push(sig);
+        step(rec, "close_boost_refund", now(), { sol: due, boostSol: rec.boostSol, recovered: rec.front.repaidSol, tx: sig });
+        save();
+        log(`refunded ${due} SOL of the ${rec.boostSol} SOL boost to ${rec.devWallet} ${sig}`);
+      }
+    }
+
     R.closedAt = now();
     R.error = null;
-    transition(rec, "closed", now(), { sol: R.swept.sol, eth: R.swept.eth });
+    transition(rec, "closed", now(), { sol: R.swept.sol, eth: R.swept.eth, boostRefund: rec.refund.paid });
     save();
     log(`closed: ${R.swept.sol.toFixed(4)} SOL + ${R.swept.eth.toFixed(5)} ETH back in the pool (fronted ${rec.front.sol} SOL + ${rec.front.eth} ETH)`);
-    void alert(`[close ${rec.id}] ${reason}: recovered ${R.swept.sol.toFixed(4)} SOL + ${R.swept.eth.toFixed(5)} ETH of ${rec.front.sol} SOL + ${rec.front.eth} ETH fronted`);
+    void alert(`[close ${rec.id}] ${reason}: recovered ${rec.front.repaidSol.toFixed(4)} SOL + ${rec.front.repaidEth.toFixed(5)} ETH of ${rec.front.sol} SOL + ${rec.front.eth} ETH fronted${rec.refund.paid ? `, ${rec.refund.paid} SOL boost refunded` : ""}`);
     return rec;
   } catch (e) {
     R.error = (e as Error).message.split("\n")[0].slice(0, 300);

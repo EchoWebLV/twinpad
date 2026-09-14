@@ -50,3 +50,14 @@ test("lossUsd is fronted value minus held value", () => {
   // tokens: 1000 × $0.02 = $20; sol $50; eth $20 + escrow $10 → held $100; fronted 1 SOL + 0.05 ETH = $200
   assert.equal(lossUsd({ sol: 1, eth: 0.05 }, inv, { pump: 0.02, pons: 0.01 }, fx), 100);
 });
+
+test("lossUsd nets out what already came back to the pool", () => {
+  const inv = { solana: { sol: 0.1, tokens: 0 }, evm: { eth: 0.01, tokens: 0, escrowEth: 0 } };
+  const fx = { SOL: 100, ETH: 2000 };
+  const price = { pump: 0, pons: 0 };
+  const front = { sol: 1, eth: 0.05 };
+  // fronted $100 + $100 = $200, held $10 + $20 = $30 → down $170
+  assert.equal(lossUsd(front, inv, price, fx), 170);
+  // 0.9 SOL and 0.04 ETH swept back: fronted-net $10 + $20 = $30, held $30 → flat
+  assert.equal(lossUsd(front, inv, price, fx, { sol: 0.9, eth: 0.04 }), 0);
+});

@@ -24,8 +24,12 @@ export class CoinState {
   trades: Trade[] = [];
   inventory: Inventory | null = null;
   maker: MakerStatus = { enabled: false, running: false, halted: false, haltReason: null, consecutiveErrors: 0, lastTick: 0, ticks: 0, trades: 0, mode: "peg", lossUsd: null };
-  /** What the pool fronted this coin, for the loss guard. */
+  /** What the pool fronted this coin (sol includes the deployer boost), for the loss guard and front recovery. */
   front: { sol: number; eth: number } = { sol: 0, eth: 0 };
+  /** Swept back to the pool so far. Harvest stops per side once repaid ≥ fronted. */
+  repaid: { sol: number; eth: number } = { sol: 0, eth: 0 };
+  /** Set once repaid ≥ fronted on both chains. */
+  retiredAt: number | null = null;
   /** Our entry price in USD per token (opening FDV / supply); selldown only sells at or above it. */
   entryPrice = 0;
   errors = { pump: 0, pons: 0 };
@@ -99,6 +103,7 @@ export class CoinState {
       stats: { range, points: series.length, inBandPct: series.length ? Math.round((1000 * inBand) / series.length) / 10 : 0, maxGap, high: high || 0, low: low === Infinity ? 0 : low },
       series,
       inventory: this.inventory,
+      front: { ...this.front, repaid: this.repaid, retiredAt: this.retiredAt },
       maker: this.maker,
       trades: this.trades.slice(-50),
       updatedAt: Date.now(),

@@ -20,9 +20,9 @@ Phase 2 (not built): deposit refunds, waterfall, dev share.
 | 1. Submit | deployer | Fills the `/launch` form (name, symbol, description, image, socials, dev wallet). Image + pump.fun metadata are pinned to IPFS on submit. |
 | 2. Deposit | deployer | Sends `DEPOSIT_SOL` to a fresh per-launch payment address (Phantom button or manual). Watcher confirms it; wrong-sender or late payments are refunded. |
 | 3. Approve | operator | `/admin` approve/reject, or `AUTO_APPROVE=true`. |
-| 4. Front | pool | Pool SOL wallet funds the per-coin creator/maker wallet with `FRONT_SOL`; pool ETH wallet funds the Pons launcher (gas + launch fee) and the Pons maker with `FRONT_ETH`. The deposit is swept into the pool. |
-| 5. Launch | server | pump.fun `create` + dev buy of `FRONT_SOL − SOL_GAS_BUDGET`. Reads the resulting curve, then Pons `launchToken` (maker = `creatorFeeRecipient`, launcher + maker tax-exempt) and a maker buy sized to land the Pons FDV on the pump.fun FDV. |
-| 6. Live | maker | Per-coin maker polls both sides and trades whenever the gap exceeds `BAND`, capped by `MAKER_MAX_CLIP_USD` and wallet floors. |
+| 4. Front | pool | The deposit (and any boost) is swept into the pool. Pool SOL wallet funds the per-coin creator/maker wallet with the quoted front plus the boost; pool ETH wallet funds the Pons launcher (gas + launch fee) and the Pons maker with the quoted ETH front. |
+| 5. Launch | server | pump.fun `create` + dev buy of `front − SOL_GAS_BUDGET + boost`. Reads the resulting curve, then Pons `launchToken` (maker = `creatorFeeRecipient`, launcher + maker tax-exempt) and a maker buy sized to land the Pons FDV on the pump.fun FDV. |
+| 6. Live | maker | Per-coin maker polls both sides and trades whenever the gap exceeds `BAND`, capped by `MAKER_MAX_CLIP_USD` and wallet floors. Inside the band it harvests: while a side's front is not repaid and that side trades `RECOVER_MARGIN` above the opening price, it sells one clip into the demand. Quote above the keep level goes back to the pool (`front.repaid*`); when Pons demand drains the maker's ETH the pool tops it up (`TOPUP_ETH`, at most `MAX_TOPUP_ETH_PER_COIN`). Repaid ≥ fronted on both chains = **front retired**, alert + `front_retired` step. |
 | 7. Exit check | timer | At launch + `RETIRE_AFTER_MIN` the coin needs `RETIRE_MIN_BUYERS` outside holders or `RETIRE_MIN_USD` held by outsiders across both chains. Met: the maker stays. Zero outside holders: instant close. Otherwise: selldown (sell clips at or above the opening price, no buys) for `RETIRE_SELLDOWN_MIN`, then close. The rule is printed on the launch page. `keep` from `/admin` switches the timer off. |
 | 8. Close | pool | Sells the maker's tokens back on both chains, collects pump.fun creator fees and the Pons creator tax, sweeps every per-coin wallet (creator, maker, launcher, payment) to the pool. Recovered amounts are on the record (`retire.swept`). Idempotent: a failed close resumes at the step it stopped. |
 
@@ -40,11 +40,23 @@ Statuses: `awaiting_deposit → paid → approved → launching → live → clo
 
 ### Sizing
 
-With TWINE V2 defaults (`FRONT_SOL=13.8`, `FRONT_ETH=0.33`) both chains open near
+`AUTO_SIZE=true` (default): each launch is fronted with what the pool has free above its
+floor, divided by the open maker slots, clamped to `[FRONT_SOL_MIN, FRONT_SOL]` and
+`[FRONT_ETH_MIN, FRONT_ETH]`. SOL is also capped at the parity dev buy (the amount that lands
+pump.fun on the Pons floor, `phantom ETH × ETH price`, ≈ 6.6 SOL at $101 SOL / $2.5k ETH):
+above that the ETH side would have to grow too. Fronts already reserved by paid or queued
+launches are excluded, so the quote grows as fees and recovered fronts flow back into the pool.
+`POST /api/paid` refuses with 503 while the pool cannot front even the minimum.
+
+Deployers can add a **boost** (`boostSol`, up to `MAX_BOOST_SOL`, SOL deposits only): it is paid
+with the deposit, goes straight into the dev buy next to the pool's SOL, and comes back to the
+dev wallet pro-rata from everything the coin returns when the pool closes it (`refund`).
+
+With TWINE V2 ceilings (`FRONT_SOL=13.8`, `FRONT_ETH=0.33`) both chains open near
 **$5.9k FDV**. The maker's Pons buy is solved in closed form on the live curve reserves
 (`sqrt(p·Q·T) − Q`, grossed up for fee + creator tax), so the number tracks the actual
-pump.fun landing price rather than a fixed ETH amount. `GET /api/paid/quote` shows the
-current numbers before you launch.
+pump.fun landing price rather than a fixed ETH amount. `GET /api/paid/quote?boost=<sol>` shows
+the current numbers before you launch.
 
 ---
 
@@ -145,7 +157,7 @@ Public
 
 ```
 GET  /api/health
-GET  /api/paid/quote                 current sizing (deposit, fronting, expected opening FDV)
+GET  /api/paid/quote?boost=          current sizing (deposit, auto-sized fronting, boost, expected opening FDV)
 POST /api/paid                       submit a launch (1 per IP per minute)
 GET  /api/paid                       open launches
 GET  /api/paid/:id                   one launch (public fields)
@@ -166,7 +178,7 @@ POST /api/admin/coins/:id/maker/resume
 POST /api/admin/coins/:id/close        {reason?}  sell back, collect fees, sweep to the pool (live, failed, stuck closing)
 POST /api/admin/coins/:id/keep                    exit timer off for this coin
 POST /api/admin/pool/resume                       lift the loss breaker
-GET  /api/admin/pool/status                       paused flag, closes in flight, per-coin loss
+GET  /api/admin/pool/status                       paused flag, closes in flight, per-coin loss / fronted / repaid / retired
 ```
 
 ---

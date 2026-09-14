@@ -20,6 +20,10 @@ export interface Quote {
   ponsEth: number;
   ponsTokens: number;
   makerCashEth: number;
+  /** Deployer's extra dev buy on pump.fun, paid on top of the deposit (SOL deposits only). */
+  boostSol: number;
+  /** Gross dev buy that lands pump.fun on the Pons floor (phantom ETH × ETH price). The pool never auto-sizes above it. */
+  parityDevBuySol: number;
   openingFdv: number;
   landing: { pump: number; pons: number };
   supplyPct: { pump: number; pons: number };
@@ -63,6 +67,8 @@ export interface LaunchRecord {
   status: LaunchStatus;
   token: TokenMeta;
   devWallet: string;
+  /** Deployer boost (SOL) added to the dev buy; refunded pro-rata from what the close recovers. */
+  boostSol: number;
   devShareBps: number;
   devShareBpsFunded: number;
   wallets: { pumpMint: string; solCreator: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
@@ -75,7 +81,15 @@ export interface LaunchRecord {
     claimed: string[];
   };
   approval: { status: "pending" | "approved" | "rejected"; at: number | null; note: string | null; auto: boolean };
-  front: { sol: number; eth: number; at: number | null; txSol: string | null; txRhLauncher: string | null; txRhMaker: string | null; repaidSol: number; repaidEth: number; writtenOffSol: number };
+  /** sol/eth: what went to the per-coin wallets (sol includes boostSol; eth grows with top-ups). repaid*: swept back to the pool so far. */
+  front: {
+    sol: number; eth: number; at: number | null; txSol: string | null; txRhLauncher: string | null; txRhMaker: string | null;
+    repaidSol: number; repaidEth: number; writtenOffSol: number;
+    /** ETH the pool sent the maker after launch because Pons demand drained it (≤ MAX_TOPUP_ETH_PER_COIN). */
+    topupEth: number;
+    /** When repaid ≥ fronted on both chains: the front is retired, what is left in the coin is profit. */
+    retiredAt: number | null;
+  };
   seed: { pumpTokens: number; ponsTokens: number; openingFdv: number; at: number } | null;
   launch: {
     startedAt: number | null; steps: Step[]; salt: string | null; pumpMint: string | null; ponsToken: string | null; ponsCurve: string | null;
@@ -105,17 +119,21 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     status: "awaiting_deposit",
     token: i.token,
     devWallet: i.devWallet,
+    boostSol: i.quote.boostSol,
     devShareBps: 0,
     devShareBpsFunded: 5000,
     wallets: i.wallets,
     payment: {
       chain: i.chain, unit: PAYMENT_UNIT[i.chain],
       address: i.chain === "eth" ? i.wallets.evmPayment : i.wallets.payment,
-      required: i.chain === "eth" ? i.quote.depositEth : i.quote.depositSol, received: 0, paidAt: null, from: null,
+      required: i.chain === "eth" ? i.quote.depositEth : round6(i.quote.depositSol + i.quote.boostSol), received: 0, paidAt: null, from: null,
       expectedFrom: i.devWallet, overpaid: 0, deadlineAt: i.deadlineAt, toPoolTx: null, txs: [], foreign: [], claimed: [],
     },
     approval: { status: "pending", at: null, note: null, auto: false },
-    front: { sol: i.quote.frontSol, eth: i.quote.frontEth, at: null, txSol: null, txRhLauncher: null, txRhMaker: null, repaidSol: 0, repaidEth: 0, writtenOffSol: 0 },
+    front: {
+      sol: round6(i.quote.frontSol + i.quote.boostSol), eth: i.quote.frontEth, at: null, txSol: null, txRhLauncher: null, txRhMaker: null,
+      repaidSol: 0, repaidEth: 0, writtenOffSol: 0, topupEth: 0, retiredAt: null,
+    },
     seed: null,
     launch: { startedAt: null, steps: [{ at: i.now, name: "created" }], salt: null, pumpMint: null, ponsToken: null, ponsCurve: null, launchedAt: null, txs: {}, error: null, retries: 0 },
     refund: { amount: 0, paid: 0, txs: [] },
@@ -125,6 +143,8 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     quote: i.quote,
   };
 }
+
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 const ALLOWED: Record<LaunchStatus, LaunchStatus[]> = {
   awaiting_deposit: ["paid", "expired", "rejected"],
@@ -172,7 +192,10 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
     q.depositEth ??= 0;
   }
   const f = raw.front as Record<string, unknown> | undefined;
-  if (f) f.repaidEth ??= 0;
+  if (f) { f.repaidEth ??= 0; f.topupEth ??= 0; f.retiredAt ??= null; }
+  raw.boostSol ??= 0;
+  const q = raw.quote as Record<string, unknown> | undefined;
+  if (q) { q.boostSol ??= 0; q.parityDevBuySol ??= 0; }
   const l = raw.launch as Record<string, unknown> | undefined;
   if (l) l.retries ??= 0;
   raw.retire ??= null;
