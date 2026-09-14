@@ -189,6 +189,7 @@
 
         <h3>3.4 Half of every fee is bought back and burned</h3>
         <p>Both venues pay the coin's creator wallet on every trade: Pons a 2% creator tax during the curve stage, pump.fun 0.30% of each curve trade and a market-cap-tiered share after graduation. Twinpad claims both once a minute. Half of each claim buys the coin on the venue that paid it and burns the tokens, timed so the buy never lands on the side that is already expensive. The other half repays the front and then flows to the pool.</p>
+        <p>On Solana the burn is a token-program burn, which reduces supply on chain. On Robinhood Chain it is the token's own burn where the contract has one, otherwise a transfer to the dead address, which no key controls. Either way the transaction is linked from the coin page.</p>
         <p>The burn is a commitment to holders, not a peg tool, and the sizing is stated plainly: per $100,000 of curve-stage volume it burns about $1,000 on Robinhood Chain and $150 on Solana. After graduation Pons pays no creator fee and pump.fun's share tiers down toward 0.05%, so the burn is largest exactly when the coin is young. Over the three simulated launch hours it moved the peg by nothing and cost the pool the burned amount.</p>
 
         <h3>3.5 The maker has modes</h3>
@@ -358,7 +359,7 @@
         <h2><span class="n">06</span>Transparency</h2>
         <p>Every coin page carries a reserves panel. Every field is an on-chain number or a signed record that resolves to one.</p>
         <ul>
-          <li>Creator, maker and launcher wallet addresses on both chains, linked to their explorers.</li>
+          <li>Creator, maker and launcher wallet addresses on both chains, linked to Solscan and to the Robinhood Chain Blockscout explorer.</li>
           <li>Live token and quote balances per wallet, and the locked allocation's address and size on each chain.</li>
           <li>Fronted, repaid and retired amounts per chain, with the transactions behind each step.</li>
           <li>Creator fees claimed per venue, cumulative and last claim, and tokens burned per chain with the burn transactions.</li>

@@ -90,6 +90,7 @@ export function Nav() {
         <div className="links">
           <a className={on("/")} href="/">Coins</a>
           <a className={on("/launch")} href="/launch">Launch</a>
+          <a className={on("/whitepaper")} href="/whitepaper">Whitepaper</a>
         </div>
         <div className="right">
           <span className={`st ${up == null ? "off" : up ? "ok" : "bad"}`} title="API status">{up == null ? "connecting" : up ? "online" : "offline"}</span>

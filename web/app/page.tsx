@@ -182,7 +182,7 @@ export default function Home() {
           <div className="step"><div className="n">04</div><h3>Hold the band</h3><p>A market maker watches both prices and trades whenever they drift more than 5% apart.</p></div>
         </div>
       </section>
-      <div className="foot"><span className="brand"><Mark size={16} />Twinpad</span><span>pump.fun on Solana · Pons v2 on Robinhood Chain 4663</span></div>
+      <div className="foot"><span className="brand"><Mark size={16} />Twinpad</span><span>pump.fun on Solana · Pons v2 on Robinhood Chain 4663 · <a className="lnk" href="/whitepaper">Whitepaper</a></span></div>
     </div>
   );
 }
