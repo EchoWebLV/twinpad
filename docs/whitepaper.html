@@ -114,18 +114,18 @@
       <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="9" height="20" fill="#ffd400"/><rect x="12" y="1" width="9" height="20" fill="none" stroke="#f1eee6" stroke-width="1.5"/></svg>
       Twinpad
     </a>
-    <div class="right">Whitepaper <b>v1.0</b> · September 2026</div>
+    <div class="right">Whitepaper <b>v1.1</b> · September 2026</div>
   </nav>
 
   <header class="head">
     <div class="eyebrow">One token · Solana + Robinhood Chain · <b>one price</b></div>
     <h1>Two chains.<br>One price.<br><span>Held honestly.</span></h1>
-    <p class="lede">Twinpad launches a coin on pump.fun and on Pons at the same moment and keeps the two prices within a band of each other. This paper explains how earlier twin launches lost money for their operators and holders, what Twinpad changes, and what the simulations we ran say those changes are worth.</p>
+    <p class="lede">Twinpad launches a coin on pump.fun and on Pons at the same moment and keeps the two prices within a band of each other. This paper explains how earlier twin launches lost money for their operators and holders, the rule set Twinpad runs instead, and what the simulations say those rules are worth.</p>
     <div class="meta">
       <div><div class="k">Chains</div><div class="v">Solana · Robinhood Chain (4663)</div></div>
       <div><div class="k">Venues</div><div class="v">pump.fun · Pons v2</div></div>
       <div><div class="k">Parity band</div><div class="v">5% of FDV</div></div>
-      <div><div class="k">Model</div><div class="v">Custodial pool, per-coin wallets</div></div>
+      <div><div class="k">Fee policy</div><div class="v">Half bought back and burned</div></div>
     </div>
   </header>
 
@@ -133,7 +133,7 @@
     <nav class="toc" aria-label="Sections">
       <a href="#s1"><span class="n">01</span>What Twinpad does</a>
       <a href="#s2"><span class="n">02</span>Where twin launches break</a>
-      <a href="#s3"><span class="n">03</span>What changes</a>
+      <a href="#s3"><span class="n">03</span>The rule set</a>
       <a href="#s4"><span class="n">04</span>Simulation</a>
       <a href="#s5"><span class="n">05</span>Safety rails</a>
       <a href="#s6"><span class="n">06</span>Transparency</a>
@@ -147,21 +147,24 @@
         <h2><span class="n">01</span>What Twinpad does</h2>
         <p>A Twinpad coin exists twice: as a pump.fun token on Solana and as a Pons token on Robinhood Chain. Each side has its own bonding curve, its own buyers and its own price. Left alone, the two prices drift apart within minutes. Twinpad's job is to stop that.</p>
         <p>Every launch gets its own set of wallets. Twinpad's pool fronts each launch with working capital, the coin goes live on both chains, and a per-coin <strong>maker</strong> watches both prices every second. When the fully diluted value on one chain runs more than 5% above the other, the maker sells a small clip on the expensive side and buys a small clip on the cheap side. Inventory never crosses chains. Nothing is bridged.</p>
-        <p>The pool's capital is a loan, not a gift. While the coin trades above its entry price the maker sells small clips into demand and sweeps the proceeds back to the pool until the front is repaid on both chains. Creator fees from both venues are claimed once a minute while a coin is live and go to the same wallets. A coin that draws no outside holders is closed by policy and its capital returned.</p>
+        <p>The pool's capital is a loan, not a gift. Each side of a coin is launched with a fixed reserve, and that reserve is all the pool will ever put into that side. Creator fees from both venues are claimed once a minute while a coin is live: half is bought back and burned on the chain that paid it, the other half repays the pool. A coin that draws no outside holders is closed by policy and its capital returned.</p>
         <div class="callout">
-          <p>The whole product rests on one promise: <strong>a holder on either chain gets the same price, and the pool that keeps that promise cannot be drained doing it.</strong> Section 02 is about how that promise was broken elsewhere. Section 03 is how Twinpad keeps it.</p>
+          <p>The whole product rests on one promise: <strong>a holder on either chain gets the same price, and the pool that keeps that promise cannot be drained doing it.</strong> Section 02 is about how that promise was broken elsewhere. Section 03 is the rule set that keeps it.</p>
         </div>
       </section>
 
       <section id="s2">
         <h2><span class="n">02</span>Where twin launches break</h2>
-        <p>The first generation of twin launches on other platforms showed the same four failures. We saw the early shape of each one in our own first coins and traced them in code before writing a line of the fix.</p>
+        <p>The first generation of twin launches on other platforms showed the same failures. We saw the early shape of each one in our own first coins and traced them in code before writing a line of the fix.</p>
 
         <h3>One-sided inventory</h3>
         <p>The Solana side opens with a large dev buy, so its wallet holds tokens and almost no cash. The Robinhood side opens with a little ETH and no tokens at all, because parity sizing lands the opening price below the Pons floor. From the first block the maker can only trade in one direction: sell Solana tokens, buy Robinhood tokens. When Robinhood runs ahead there is nothing to sell there, and the only lever left is buying the falling Solana side with fresh money.</p>
 
         <h3>Open-ended top-ups</h3>
         <p>When a maker runs out of cash on a side, the pool tops it up. If that top-up has no ceiling tied to what the coin has earned, a one-way sell-off on one chain turns into a pipe from the pool into a falling token. That is the mechanism behind the losses in the launches that went wrong: not a hack, not a bug, a rule that kept buying.</p>
+
+        <h3>The operator is the biggest seller</h3>
+        <p>To get its capital back, a maker sells its opening position into every rise. Done every tick, that makes the operator the largest seller of its own coin in the first hours, exactly when holders are deciding whether to stay. The pool gets its loan back faster and the coin pays for it.</p>
 
         <h3>A peg that cannot scale</h3>
         <p>On a bonding curve a few hundred dollars moves the price 10%. After graduation to a liquidity pool, the same 10% at a $1M market cap costs about $2,000 of buying, and the flow that opened the gap keeps coming. A maker sized for the curve stage becomes noise at scale, and a project that promises parity at any size is promising something it cannot pay for.</p>
@@ -171,26 +174,34 @@
       </section>
 
       <section id="s3">
-        <h2><span class="n">03</span>What changes</h2>
-        <p>Five changes, each aimed at one of the failures above. Three are pure code and change nothing about how much capital a launch needs. The other two are operational commitments.</p>
+        <h2><span class="n">03</span>The rule set</h2>
+        <p>Seven rules. Each answers one failure above. The first four were chosen by running candidate rules through the simulator in Section 04 and keeping the one that held the band with the least pool money and the least operator selling.</p>
 
         <h3>3.1 Two-sided from the first block</h3>
         <p>Every launch opens a Robinhood position with its ETH front, even when parity math says zero. Both wallets hold tokens and cash before the first outside buyer arrives, so the maker can sell on whichever side runs ahead. Section 04 shows this single change is what moves the peg from "holds sometimes" to "holds almost always" during the curve stage.</p>
 
-        <h3>3.2 A hard budget per coin</h3>
-        <p>Each side of a coin may hold at most a fixed number of clips' worth of tokens that the peg itself bought, on top of its opening position. Selling releases that budget. Pool top-ups stay inside a per-coin cap unless the coin has already repaid everything it was fronted, in which case only what it has repaid can be lent back. A coin can lose its own budget. It cannot reach into the pool for more.</p>
+        <h3>3.2 One reserve per side, and the pool never adds to it</h3>
+        <p>Each side of a coin is launched with its opening position plus a cash reserve of twelve clips. That reserve is the whole peg budget for that side. The pool never tops it up. Sells on a side refill its cash and fee income adds to it; nothing else does. The maker buys the cheap side only while the reserve has cash, so the reserve is the cap and there is no second rule to reason about.</p>
+        <p>The worst case the pool can lose on a coin is the amount it fronted, and that number is on the coin page before the first outside buyer.</p>
 
-        <h3>3.3 The maker has modes</h3>
+        <h3>3.3 The maker is not the top seller</h3>
+        <p>Front repayment sells at most one clip a minute per side, and only once that side trades 25% above the maker's entry. Outside that, the maker sells only to close a gap, and every such sell is matched by a buy on the other chain. Repayment takes longer this way. Because the reserve is fixed, the pool's exposure does not grow while it waits.</p>
+
+        <h3>3.4 Half of every fee is bought back and burned</h3>
+        <p>Both venues pay the coin's creator wallet on every trade: Pons a 2% creator tax during the curve stage, pump.fun 0.30% of each curve trade and a market-cap-tiered share after graduation. Twinpad claims both once a minute. Half of each claim buys the coin on the venue that paid it and burns the tokens, timed so the buy never lands on the side that is already expensive. The other half repays the front and then flows to the pool.</p>
+        <p>The burn is a commitment to holders, not a peg tool, and the sizing is stated plainly: per $100,000 of curve-stage volume it burns about $1,000 on Robinhood Chain and $150 on Solana. After graduation Pons pays no creator fee and pump.fun's share tiers down toward 0.05%, so the burn is largest exactly when the coin is young. Over the three simulated launch hours it moved the peg by nothing and cost the pool the burned amount.</p>
+
+        <h3>3.5 The maker has modes</h3>
         <ul>
-          <li><strong>Curve stage:</strong> parity keeper. Clips sized to curve depth, band 5%, both sides selling and buying inside the budget.</li>
-          <li><strong>Float stage</strong>, above a market cap stated on the coin page: budgeted band-keeper. The maker still narrows the gap when it can, never adds pool money, and sells the pool's inventory in tranches into strength on both chains. The pool takes profit on the way up instead of defending a level on the way down.</li>
+          <li><strong>Curve stage:</strong> parity keeper. Clips sized to curve depth, band 5%, both sides selling and buying inside the reserve.</li>
+          <li><strong>Float stage</strong>, above a market cap stated on the coin page: budgeted band-keeper. Clips scale with venue depth, the reserve stays fixed, and the maker never adds pool money. Gap-closing sells are capped per hour so that the maker cannot liquidate the pool's position into a falling market in the name of parity. Separately, the pool sells its inventory in tranches into strength on both chains, taking profit on the way up instead of defending a level on the way down.</li>
         </ul>
 
-        <h3>3.4 Reserve rebalancing is manual and announced</h3>
+        <h3>3.6 Reserve rebalancing is manual and announced</h3>
         <p>Inventory never crosses chains automatically. When the pool's SOL and ETH drift out of proportion the system raises an alert and an operator swaps, and the swap is logged on the status page. No maker ever holds a bridge key.</p>
 
-        <h3>3.5 Proof of reserves on every coin page</h3>
-        <p>Each coin page shows the coin's wallets on both chains, live balances, what was fronted, what has been repaid, fees claimed, and the maker's current inventory and budget. Anyone can check any number against the explorers. Section 06 lists the fields.</p>
+        <h3>3.7 Proof of reserves on every coin page</h3>
+        <p>Each coin page shows the coin's wallets on both chains, live balances, what was fronted, what has been repaid, fees claimed, tokens burned per chain, and the maker's remaining reserve. Anyone can check any number against the explorers. Section 06 lists the fields.</p>
 
         <h3>What Twinpad does not do</h3>
         <ul>
@@ -201,30 +212,26 @@
 
         <figure>
           <svg viewBox="0 0 760 250" role="img" aria-labelledby="figt">
-            <title id="figt">The maker's decision each tick: read both prices, act within budget on both sides</title>
+            <title id="figt">The maker's decision each tick: read both prices, act within each side's reserve</title>
             <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9a978e"/></marker></defs>
-            <!-- pump side -->
             <rect x="20" y="30" width="220" height="190" fill="#121211" stroke="rgba(241,238,230,0.3)"/>
             <text x="36" y="58" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="2" fill="#9a978e">SOLANA · PUMP.FUN</text>
             <text x="36" y="96" font-family="Archivo, sans-serif" font-weight="900" font-size="22" fill="#f1eee6">TOKENS + SOL</text>
-            <text x="36" y="124" font-family="IBM Plex Mono, monospace" font-size="11" fill="#9a978e">opening bag · cash · budget</text>
+            <text x="36" y="124" font-family="IBM Plex Mono, monospace" font-size="11" fill="#9a978e">opening bag · fixed reserve</text>
             <rect x="36" y="150" width="188" height="10" fill="rgba(241,238,230,0.08)"/>
             <rect x="36" y="150" width="120" height="10" fill="#ffd400"/>
-            <text x="36" y="182" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#55534d">bought inventory vs ceiling</text>
-            <!-- pons side -->
+            <text x="36" y="182" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#55534d">reserve cash remaining</text>
             <rect x="520" y="30" width="220" height="190" fill="#121211" stroke="rgba(241,238,230,0.3)"/>
             <text x="536" y="58" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="2" fill="#9a978e">ROBINHOOD · PONS</text>
             <text x="536" y="96" font-family="Archivo, sans-serif" font-weight="900" font-size="22" fill="#f1eee6">TOKENS + ETH</text>
-            <text x="536" y="124" font-family="IBM Plex Mono, monospace" font-size="11" fill="#9a978e">opening bag · cash · budget</text>
+            <text x="536" y="124" font-family="IBM Plex Mono, monospace" font-size="11" fill="#9a978e">opening bag · fixed reserve</text>
             <rect x="536" y="150" width="188" height="10" fill="rgba(241,238,230,0.08)"/>
             <rect x="536" y="150" width="60" height="10" fill="#ffd400"/>
-            <text x="536" y="182" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#55534d">bought inventory vs ceiling</text>
-            <!-- maker -->
+            <text x="536" y="182" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#55534d">reserve cash remaining</text>
             <rect x="290" y="80" width="180" height="90" fill="#080808" stroke="#ffd400"/>
             <text x="380" y="112" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="900" font-size="16" fill="#ffd400">MAKER · 1 s</text>
             <text x="380" y="134" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#9a978e">gap &gt; 5% → sell rich side</text>
-            <text x="380" y="150" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#9a978e">buy cheap side within budget</text>
-            <!-- arrows -->
+            <text x="380" y="150" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#9a978e">buy cheap side from its reserve</text>
             <line x1="240" y1="110" x2="288" y2="110" stroke="#9a978e" stroke-width="1.2" marker-end="url(#arr)"/>
             <line x1="288" y1="140" x2="242" y2="140" stroke="#9a978e" stroke-width="1.2" marker-end="url(#arr)"/>
             <line x1="520" y1="110" x2="472" y2="110" stroke="#9a978e" stroke-width="1.2" marker-end="url(#arr)"/>
@@ -233,99 +240,110 @@
             <text x="496" y="102" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#55534d">price</text>
             <text x="264" y="158" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#55534d">clip</text>
             <text x="496" y="158" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#55534d">clip</text>
-            <!-- no bridge -->
             <line x1="130" y1="236" x2="630" y2="236" stroke="rgba(241,238,230,0.2)" stroke-dasharray="3 5"/>
-            <text x="380" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="2" fill="#55534d">NO BRIDGE · INVENTORY NEVER CROSSES CHAINS</text>
+            <text x="380" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="2" fill="#55534d">NO BRIDGE · NO TOP-UPS · INVENTORY NEVER CROSSES CHAINS</text>
           </svg>
-          <figcaption>Figure 1. Each tick the maker reads both fully diluted values. Outside the band it sells a clip on the expensive side and, only while that side's bought-inventory budget has room, buys a clip on the cheap side. Both wallets hold tokens and cash from launch.</figcaption>
+          <figcaption>Figure 1. Each tick the maker reads both fully diluted values. Outside the band it sells a clip on the expensive side and, only while that side's reserve has cash, buys a clip on the cheap side. Both wallets hold tokens and a fixed reserve from launch; the pool adds nothing later.</figcaption>
         </figure>
       </section>
 
       <section id="s4">
         <h2><span class="n">04</span>Simulation</h2>
-        <p>Before committing to the design in Section 03 we built a simulator against the real curve mathematics and the maker's real parameters, and ran candidate rules through the order flows that broke earlier launches. The code ships in the repository and every table here can be regenerated with one command (Appendix).</p>
+        <p>Before committing to the rules in Section 03 we built a simulator against the real curve mathematics and the maker's real parameters, and ran candidate rules through the order flows that broke earlier launches. The code ships in the repository and every table here can be regenerated with one command (Appendix).</p>
 
         <h3>Method</h3>
         <ul>
-          <li><strong>Venues.</strong> pump.fun bonding curve at its real virtual reserves (30 SOL against 1.073 billion tokens) with its 1.25% fee. Pons launch configuration 0 as read from chain: 1 billion supply, 1.68 ETH phantom quote, 1% fee, 2% creator tax, graduation at 4.2 ETH raised. After graduation both venues are modelled as constant-product pools seeded from the curve's final state.</li>
-          <li><strong>Maker.</strong> Production values: 5% band, $25 clips scaled up to 3× with the gap, 4 clips of working cash kept per side, top-ups of 0.5 SOL and 0.02 ETH capped per coin, $150 per-coin loss guard, fee claims once a minute.</li>
+          <li><strong>Venues.</strong> pump.fun bonding curve at its real virtual reserves (30 SOL against 1.073 billion tokens) with its 1.25% fee, of which 0.30% reaches the creator. Pons launch configuration 0 as read from chain: 1 billion supply, 1.68 ETH phantom quote, 1% fee, 2% creator tax, graduation at 4.2 ETH raised. After graduation both venues are modelled as constant-product pools seeded from the curve's final state; the pump.fun creator share is taken at its 0.05% floor tier there and Pons pays none.</li>
+          <li><strong>Rules compared.</strong> <em>Live</em>: the rule in production before this paper, which buys the cheap side whenever a gap is open and tops up from the pool inside a per-coin cap. <em>Ceiling + seeded</em>: the same with an opening Robinhood position and a cap on tokens the peg has bought per side. <em>Steward</em>: rules 3.1 to 3.3, a twelve-clip reserve per side, no top-ups, repayment sells one clip a minute at 25% over entry. <em>Steward, scaled</em>: the same with clips sized to 0.5% of venue depth. <em>Steward + burn</em>: steward plus rule 3.4.</li>
           <li><strong>Flow.</strong> Seven order-flow regimes at two intensities: Solana holders dumping while Robinhood buys and its mirror, each side dumping alone, both dumping, both being bought, and two-way noise. A "30% dump" sells 30% of outsiders' holdings over three hours; a "30% buy" spends 30% of the venue's starting depth.</li>
-          <li><strong>Measure.</strong> Each run lasts three hours at a 3-second tick (production now runs the maker every second, which only tightens the results), repeated over 20 to 40 random seeds. We report the share of ticks inside the band and the pool's outcome against a baseline where the maker is switched off under the same flow.</li>
+          <li><strong>Measure.</strong> Each run lasts three hours at a 3-second tick (production now runs the maker every second, which only tightens the results), repeated over 20 random seeds. We report the share of ticks inside the band, what the maker sold, what the pool topped up, and the pool's outcome against a baseline where the maker is switched off under the same flow.</li>
         </ul>
 
-        <h3>Result 1: the launch-stage rules</h3>
-        <p>Four rules at a fresh launch with today's capital (about $940 fronted per coin). "Live" is the rule running in production at the time of writing. "Ceiling + seeded" is Section 3.1 plus 3.2. "Symmetric" splits capital equally per chain with no top-ups. "Two-legged" forbids any cheap-side buy unless the expensive-side sell went through.</p>
+        <h3>Result 1: which rule, same capital</h3>
+        <p>A fresh launch with today's capital, about $940 fronted per coin, plus the steward reserve where the rule calls for it. Each cell is the share of time inside the 5% band and the dollars the maker sold over three hours.</p>
         <div class="tbl"><table>
-          <caption>Fresh launch · 40 seeds · <b>pool P&amp;L in $ / share of time in band</b></caption>
-          <thead><tr><th>Order flow</th><th class="num">Live</th><th class="num">Ceiling + seeded</th><th class="num">Symmetric</th><th class="num">Two-legged</th></tr></thead>
+          <caption>Fresh launch, today's capital · 20 seeds · <b>time in band · maker sold</b></caption>
+          <thead><tr><th>Order flow</th><th class="num">Live</th><th class="num">Ceiling + seeded</th><th class="num">Steward</th></tr></thead>
           <tbody>
-            <tr><td>SOL dumps, RH buys</td><td class="num">251 / 3%</td><td class="num hi">523 / 3%</td><td class="num">328 / 3%</td><td class="num">568 / 1%</td></tr>
-            <tr><td>RH dumps, SOL buys</td><td class="num">550 / 24%</td><td class="num hi">686 / 18%</td><td class="num">341 / 8%</td><td class="num">686 / 18%</td></tr>
-            <tr><td>Two-way noise</td><td class="num">576 / 83%</td><td class="num hi">808 / 88%</td><td class="num">440 / 54%</td><td class="num">808 / 69%</td></tr>
-            <tr><td>Both sides dump</td><td class="num">66 / 10%</td><td class="num hi">459 / 50%</td><td class="num">271 / 19%</td><td class="num">497 / 17%</td></tr>
-            <tr><td>SOL dumps alone</td><td class="num">121 / 7%</td><td class="num hi">436 / 14%</td><td class="num">256 / 8%</td><td class="num">486 / 5%</td></tr>
+            <tr><td>SOL dumps, RH buys · 30%</td><td class="num">24% · $2.0k</td><td class="num">23% · $339</td><td class="num hi">31% · $251</td></tr>
+            <tr><td>RH dumps, SOL buys · 30%</td><td class="num">100% · $1.1k</td><td class="num">100% · $1.0k</td><td class="num hi">99% · $915</td></tr>
+            <tr><td>Two-way noise · 30%</td><td class="num bad">73% · $11.7k</td><td class="num">51% · $659</td><td class="num hi">100% · $572</td></tr>
+            <tr><td>Both sides bought · 30%</td><td class="num bad">41% · $14.8k</td><td class="num">23% · $729</td><td class="num hi">97% · $3.0k</td></tr>
+            <tr><td>Two-way noise · 70%</td><td class="num bad">39% · $14.6k</td><td class="num">22% · $710</td><td class="num hi">97% · $2.9k</td></tr>
+            <tr><td>Both sides bought · 70%</td><td class="num">27% · $15.7k</td><td class="num">10% · $834</td><td class="num hi">83% · $3.5k</td></tr>
+            <tr><td>Any dump with no buying</td><td class="num">100% · $0–27</td><td class="num">100% · $82–154</td><td class="num">100% · $82–154</td></tr>
           </tbody>
         </table></div>
-        <p class="note">Top-ups drawn from the pool fell from about $460 per coin under the live rule to about $280 under ceiling + seeded, and to zero under symmetric. The two-legged rule saves the most in a dump but holds the band least in normal trading, so it was dropped. Symmetric never spends a top-up but leaves cash idle and bags too small to sell from.</p>
+        <p class="note">Pool top-ups per coin: live up to $507 and about $300 in every two-way flow, ceiling + seeded $103–305, steward $0. The $150 loss guard halted the live rule in three of the flows (red) and steward in none. The live rule's five-figure selling in two-way markets is churn: with nothing to sell on the cheap chain it trades every tick without closing the gap, paying fees each time, until the guard stops it.</p>
 
         <h3>Result 2: inventory on both chains</h3>
-        <p>The same rules with a launch that opens tokens and cash on both chains and a disclosed locked allocation, roughly $3,400 fronted per coin. This is the launch shape Twinpad adopts.</p>
+        <p>Today's launch shape under the live rule against a launch that opens tokens and cash on both chains with a disclosed locked allocation, run under the steward rule. The two-sided shape fronts $3,385 of opening positions plus $600 of reserves per coin, excluding the locked allocation. This is the launch shape Twinpad adopts.</p>
         <div class="tbl"><table>
-          <caption>Fresh launch, two-sided inventory · 20 seeds · <b>share of time in band</b></caption>
-          <thead><tr><th>Order flow</th><th class="num">Today's launch shape</th><th class="num">Two-sided launch</th></tr></thead>
+          <caption>Fresh launch · 20 seeds · <b>share of time in band</b></caption>
+          <thead><tr><th>Order flow</th><th class="num">Today's shape, live rule</th><th class="num">Two-sided shape, steward</th></tr></thead>
           <tbody>
-            <tr><td>SOL dumps, RH buys · 30%</td><td class="num">23%</td><td class="num hi">99%</td></tr>
-            <tr><td>SOL dumps, RH buys · 70%</td><td class="num">10%</td><td class="num hi">50%</td></tr>
-            <tr><td>RH dumps, SOL buys · 70%</td><td class="num">49%</td><td class="num hi">96%</td></tr>
-            <tr><td>Both sides bought · 70%</td><td class="num">24%</td><td class="num hi">79%</td></tr>
+            <tr><td>SOL dumps, RH buys · 30%</td><td class="num">24%</td><td class="num hi">98%</td></tr>
+            <tr><td>SOL dumps, RH buys · 70%</td><td class="num">10%</td><td class="num hi">49%</td></tr>
+            <tr><td>RH dumps, SOL buys · 70%</td><td class="num">49%</td><td class="num hi">91%</td></tr>
+            <tr><td>Both sides bought · 70%</td><td class="num">27%</td><td class="num hi">99%</td></tr>
             <tr><td>Two-way noise · 30%</td><td class="num">73%</td><td class="num hi">100%</td></tr>
             <tr><td>Any dump with no buying</td><td class="num">100%</td><td class="num hi">100%</td></tr>
           </tbody>
         </table></div>
-        <p class="note">Under today's shape the $150 loss guard halted the maker in two of the seven flows. Under the two-sided launch it never fired.</p>
+        <p class="note">With the two-sided shape every rule holds the band about equally well; the difference is what it costs. In two-way noise at 30% the live rule sold $1,049 of the coin over three hours and steward sold $211, with the band held 100% by both. The loss guard never fired under the two-sided shape.</p>
 
         <h3>Result 3: what market cap does to the peg</h3>
-        <p>The same maker placed at six market caps. Depth is the quote sitting in the venue. The cost column is what it takes to close a 10% gap on the shallower side. "One-way" is a 30% Solana dump with Robinhood quiet; "two-way" is 30% noise. Clips are $25 in the live rule and 0.5% of depth in the depth-scaled rule.</p>
+        <p>The same maker placed at six market caps. Depth is the quote sitting in the venue. The cost column is what it takes to close a 10% gap on the shallower side. "One-way" is a 30% Solana dump with Robinhood quiet; "two-way" is 30% noise. Live uses $25 clips and pool top-ups; steward scaled uses clips of 0.5% of depth and a reserve of twelve such clips per side, never topped up.</p>
         <div class="tbl"><table>
           <caption>Market cap grid · 20 seeds · <b>share of time in band</b></caption>
-          <thead><tr><th>FDV</th><th>Stage</th><th class="num">Depth SOL / RH</th><th class="num">Cost of 10%</th><th class="num">One-way, live</th><th class="num">One-way, scaled</th><th class="num">Two-way, live</th><th class="num">Two-way, scaled</th></tr></thead>
+          <thead><tr><th>FDV</th><th>Stage</th><th class="num">Depth SOL / RH</th><th class="num">Cost of 10%</th><th class="num">One-way, live</th><th class="num">One-way, steward scaled</th><th class="num">Two-way, live</th><th class="num">Two-way, steward scaled</th><th class="num">Live top-ups</th><th class="num">Steward reserve / side</th></tr></thead>
           <tbody>
-            <tr><td>$4.2k</td><td>curve</td><td class="num">$3.1k / $4.3k</td><td class="num">$151</td><td class="num">100%</td><td class="num">100%</td><td class="num">73%</td><td class="num">51%</td></tr>
-            <tr><td>$25k</td><td>curve</td><td class="num">$9.1k / $10.3k</td><td class="num">$446</td><td class="num">9%</td><td class="num">34%</td><td class="num">95%</td><td class="num hi">100%</td></tr>
-            <tr><td>$100k</td><td>pools</td><td class="num">$13.0k / $14.7k</td><td class="num">$635</td><td class="num">2%</td><td class="num">21%</td><td class="num">82%</td><td class="num hi">100%</td></tr>
-            <tr><td>$500k</td><td>pools</td><td class="num">$29.0k / $32.9k</td><td class="num">$1,420</td><td class="num">1%</td><td class="num">17%</td><td class="num">65%</td><td class="num hi">99%</td></tr>
-            <tr><td>$1M</td><td>pools</td><td class="num">$41.0k / $46.6k</td><td class="num">$2,008</td><td class="num bad">1%</td><td class="num">16%</td><td class="num">63%</td><td class="num hi">99%</td></tr>
-            <tr><td>$5M</td><td>pools</td><td class="num">$91.6k / $104k</td><td class="num">$4,490</td><td class="num bad">1%</td><td class="num">14%</td><td class="num">60%</td><td class="num hi">96%</td></tr>
+            <tr><td>$4.2k</td><td>curve</td><td class="num">$3.1k / $4.3k</td><td class="num">$151</td><td class="num">100%</td><td class="num">100%</td><td class="num">73%</td><td class="num hi">100%</td><td class="num">$303</td><td class="num">$300</td></tr>
+            <tr><td>$25k</td><td>curve</td><td class="num">$9.1k / $10.3k</td><td class="num">$446</td><td class="num">29%</td><td class="num">35%</td><td class="num">100%</td><td class="num hi">100%</td><td class="num">$177</td><td class="num">$545</td></tr>
+            <tr><td>$100k</td><td>pools</td><td class="num">$13.0k / $14.7k</td><td class="num">$635</td><td class="num">17%</td><td class="num">21%</td><td class="num">99%</td><td class="num hi">100%</td><td class="num">$394</td><td class="num">$780</td></tr>
+            <tr><td>$500k</td><td>pools</td><td class="num">$29.0k / $32.9k</td><td class="num">$1,420</td><td class="num">8%</td><td class="num">17%</td><td class="num">96%</td><td class="num hi">99%</td><td class="num">$1.5k</td><td class="num">$1.7k</td></tr>
+            <tr><td>$1M</td><td>pools</td><td class="num">$41.0k / $46.6k</td><td class="num">$2,008</td><td class="num bad">4%</td><td class="num">16%</td><td class="num">93%</td><td class="num hi">99%</td><td class="num">$2.9k</td><td class="num">$2.5k</td></tr>
+            <tr><td>$5M</td><td>pools</td><td class="num">$91.6k / $104k</td><td class="num">$4,490</td><td class="num bad">1%</td><td class="num">14%</td><td class="num">84%</td><td class="num hi">94%</td><td class="num">$9.0k</td><td class="num">$5.5k</td></tr>
           </tbody>
         </table></div>
-        <p>Two things follow. In two-way markets a peg is affordable at any size if clips grow with depth. In a one-way run above roughly $25k no rule we tested holds the band, and the money spent trying is money lost. That is the boundary between the curve-stage parity keeper and the float-stage band-keeper in Section 3.3.</p>
+        <p>Two things follow. In two-way markets a peg is affordable at any size if clips grow with depth, and a fixed reserve does it without the pool sending more money later, where the live rule needed thousands in top-ups. In a one-way run above roughly $25k no rule we tested holds the band, and the money spent trying is money lost. That is the boundary between the curve-stage parity keeper and the float-stage band-keeper in Section 3.5.</p>
+        <p class="note">Depth-scaled clips trade more. As simulated, the scaled steward closes gaps in falling markets too: at $1M in a two-way sell-off it sold $114k of the pool's position where the live rule sold $12k. In a two-way rally it sold $6k, mostly repaying its reserve, and those sells left the end price on both venues about 9% below the hold baseline, which marked the pool's whole position down by $35k. The float stage in Section 3.5 caps gap-closing sells per hour so that parity work never becomes liquidation. That cap is not in these runs.</p>
 
         <h3>Result 4: the bag, not the maker, is the exposure at scale</h3>
         <div class="tbl"><table>
-          <caption>Pool inventory, maker off · 30% Solana dump · <b>change in value</b></caption>
+          <caption>Pool inventory · 30% Solana dump, Robinhood quiet · <b>change in value over three hours</b></caption>
           <thead><tr><th>FDV</th><th class="num">$25k</th><th class="num">$100k</th><th class="num">$500k</th><th class="num">$1M</th><th class="num">$5M</th></tr></thead>
-          <tbody><tr><td>Opening position, marked to market</td><td class="num">−$1.8k</td><td class="num">−$13.1k</td><td class="num">−$75.5k</td><td class="num bad">−$154k</td><td class="num bad">−$788k</td></tr></tbody>
+          <tbody>
+            <tr><td>Opening position, maker off</td><td class="num">−$1.8k</td><td class="num">−$13.1k</td><td class="num">−$75.5k</td><td class="num bad">−$154k</td><td class="num bad">−$788k</td></tr>
+            <tr><td>Added by keeping parity, live</td><td class="num">−$0.2k</td><td class="num">−$1.6k</td><td class="num">−$12.2k</td><td class="num">−$29.0k</td><td class="num">−$194k</td></tr>
+            <tr><td>Added by keeping parity, steward scaled</td><td class="num">−$0.2k</td><td class="num">−$1.9k</td><td class="num">−$13.5k</td><td class="num">−$31.0k</td><td class="num">−$200k</td></tr>
+          </tbody>
         </table></div>
-        <p>No maker rule changed these figures by more than a few percent. At scale the pool's risk is the size of the position it still holds, which is why the float stage sells in tranches into strength rather than defending a level.</p>
+        <p>At scale the pool's risk is the size of the position it still holds. Keeping parity in a one-way dump adds 11% to 25% to that loss, for every rule: matching the falling chain means selling the quiet chain down to meet it, and the pool's position there is marked down with it. The same arithmetic runs in rallies. While the pool holds about a fifth of the supply, each dollar the maker sells at a $1M market cap lowers the mark on the whole position by several dollars, so the cash is banked and the price holders see is lower. Both facts point the same way. The float stage sells in tranches into strength rather than defending a level, it does not chase a one-way run on the other chain, and the locked allocation stays locked.</p>
+
+        <h3>Result 5: the burn is real money, not a peg</h3>
+        <p>Adding rule 3.4 to steward burned $27 to $110 per coin over the three launch hours in the two-sided shape and moved the share of time in band by at most one point in every flow. Above graduation, at pump.fun's floor tier and with no Pons fee, it burned $1 to $37 per three hours with today's small opening position. The burn's size follows volume, not the peg, which is why Section 3.4 states it per $100,000 traded rather than as a promise about price.</p>
 
         <h3>How to read the numbers</h3>
         <ul>
           <li>Order flow is synthetic. It was shaped to reproduce the failure modes, not fitted to any one token's trades. Rankings between rules are the finding; dollar amounts are illustrative.</li>
           <li>Runs are marked to market at the end of a three-hour window. In a rising market a maker that sold into strength shows less than one that held, even though it banked real cash. That is an opportunity cost, not a loss from the pool.</li>
-          <li>pump.fun creator fee income, gas, slippage rejections and RPC failures are excluded. They affect every rule equally.</li>
+          <li>Gas, slippage rejections and RPC failures are excluded. They affect every rule equally.</li>
         </ul>
       </section>
 
       <section id="s5">
         <h2><span class="n">05</span>Safety rails</h2>
-        <p>These are the production values at the time of writing. They are configuration, and the coin page shows the values in force for each coin.</p>
+        <p>The values the rule set specifies. Where a rail is not yet live the roadmap in Section 07 says so, and the coin page shows the values in force for each coin.</p>
         <div class="tbl"><table>
           <thead><tr><th>Rail</th><th>Value</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td>Parity band</td><td>5% of FDV</td><td>Inside it the maker only harvests; outside it the maker acts.</td></tr>
+            <tr><td>Parity band</td><td>5% of FDV</td><td>Inside it the maker only repays; outside it the maker acts.</td></tr>
             <tr><td>Clip</td><td>$25, up to 3× with the gap</td><td>Size of one maker trade at the curve stage; scales with depth after.</td></tr>
-            <tr><td>Working cash kept</td><td>4 clips per side</td><td>Everything above it is swept to the pool and counts as repaid.</td></tr>
-            <tr><td>Top-ups</td><td>0.5 SOL / 0.02 ETH, capped 3 SOL / 0.2 ETH per coin</td><td>Beyond the cap only what the coin has already repaid can be lent back.</td></tr>
+            <tr><td>Reserve per side</td><td>12 clips, fronted at launch</td><td>The whole peg budget for that side. Never topped up by the pool.</td></tr>
+            <tr><td>Repayment sells</td><td>≤ 1 clip / min / side, ≥ 25% over entry</td><td>Caps operator selling into rises while the front is unrepaid.</td></tr>
+            <tr><td>Float-stage sell cap</td><td>per hour, stated on the coin page</td><td>Bounds gap-closing sells above the stated market cap; not yet simulated.</td></tr>
+            <tr><td>Fee split</td><td>50% burn · 50% repay, then pool</td><td>Each claim: half buys the coin on the paying chain and burns it, never on the expensive side.</td></tr>
             <tr><td>Loss guard, coin</td><td>$150</td><td>Fronted minus held minus returned above this halts that coin's maker.</td></tr>
             <tr><td>Loss guard, pool</td><td>$500</td><td>Halts every maker and pauses approvals until an operator resumes.</td></tr>
             <tr><td>Exit policy</td><td>10 min · 5 holders or $100 held</td><td>A coin below both thresholds is sold down for 45 minutes and closed; capital returns to the pool.</td></tr>
@@ -341,10 +359,10 @@
         <p>Every coin page carries a reserves panel. Every field is an on-chain number or a signed record that resolves to one.</p>
         <ul>
           <li>Creator, maker and launcher wallet addresses on both chains, linked to their explorers.</li>
-          <li>Live token and quote balances per wallet.</li>
-          <li>Fronted, topped up, repaid and retired amounts per chain, with the transactions behind each step.</li>
-          <li>Creator fees claimed per venue, cumulative and last claim.</li>
-          <li>The maker's bought-inventory budget and how much of it is in use on each side.</li>
+          <li>Live token and quote balances per wallet, and the locked allocation's address and size on each chain.</li>
+          <li>Fronted, repaid and retired amounts per chain, with the transactions behind each step.</li>
+          <li>Creator fees claimed per venue, cumulative and last claim, and tokens burned per chain with the burn transactions.</li>
+          <li>The maker's reserve on each side and how much of it remains.</li>
           <li>Maker state: parity keeper or band-keeper, the market cap where the mode changes, and any halt with its reason.</li>
           <li>Pool status: SOL and ETH held, free above the floors, and the log of operator rebalancing swaps.</li>
         </ul>
@@ -354,11 +372,14 @@
       <section id="s7">
         <h2><span class="n">07</span>Roadmap</h2>
         <div class="road">
-          <div><span class="st done">shipped</span><div><b>Front repayment and capped top-ups</b><span>Sweeps above working cash count as repaid; top-ups past the cap only from what the coin has repaid.</span></div></div>
+          <div><span class="st done">shipped</span><div><b>Front repayment and capped top-ups</b><span>Sweeps above working cash count as repaid; top-ups past the cap only from what the coin has repaid. Rule 3.2 replaces this.</span></div></div>
           <div><span class="st done">shipped</span><div><b>Fee claims while live</b><span>pump.fun creator vault and Pons creator-tax escrow claimed once a minute per coin.</span></div></div>
           <div><span class="st done">shipped</span><div><b>Exact-balance closes and RPC failover</b><span>Closes sell precisely what the wallet holds; Robinhood RPC falls through an ordered list of endpoints.</span></div></div>
-          <div><span class="st next">next</span><div><b>Two-sided launch</b><span>Opening Robinhood position from the ETH front on every coin; disclosed locked allocation on both chains.</span></div></div>
-          <div><span class="st next">next</span><div><b>Per-side inventory budget</b><span>Ceiling on tokens the peg has bought, released by sells; no cheap-side buy past it.</span></div></div>
+          <div><span class="st done">shipped</span><div><b>Opening Robinhood position and per-side bought-inventory cap</b><span>Every launch seeds the Pons side with its ETH front; the peg's bought tokens per side are capped.</span></div></div>
+          <div><span class="st next">next</span><div><b>Two-sided launch shape</b><span>Larger opening positions on both chains and a disclosed locked allocation on each.</span></div></div>
+          <div><span class="st next">next</span><div><b>One reserve per side, no top-ups</b><span>Twelve clips of cash fronted at launch as the whole budget; the top-up path and the bought-inventory cap retire.</span></div></div>
+          <div><span class="st next">next</span><div><b>Gentle front repayment</b><span>One clip a minute per side, only 25% over entry.</span></div></div>
+          <div><span class="st next">next</span><div><b>Fee buyback and burn</b><span>Half of every claim bought back on its own chain and burned, never on the expensive side; burns shown per chain.</span></div></div>
           <div><span class="st plan">planned</span><div><b>Maker modes and tranche selling</b><span>Parity keeper on the curve, band-keeper above the stated market cap, take-profit in tranches into strength.</span></div></div>
           <div><span class="st plan">planned</span><div><b>Reserve rebalance alerts</b><span>Alert when pool SOL and ETH drift out of proportion; operator swap logged on the status page.</span></div></div>
           <div><span class="st plan">planned</span><div><b>Proof of reserves panel</b><span>The fields in Section 06 on every coin page.</span></div></div>
@@ -370,7 +391,8 @@
         <ul>
           <li><strong>Parity is a service, not a law.</strong> Above the stated market cap, or during a one-way run, the two prices can and will separate. The page says so before anyone buys.</li>
           <li><strong>Custody.</strong> Twinpad holds the per-coin wallets and the pool. Holders are trusting an operator, and the reserves panel exists so that trust can be checked rather than assumed.</li>
-          <li><strong>Venue risk.</strong> pump.fun and Pons are third-party programs. A change in their fees, graduation rules or fee-sharing changes the economics here.</li>
+          <li><strong>Burns are per chain and irreversible.</strong> Fees differ between venues, so the amounts burned on each chain differ too. Circulating supply diverges slightly between chains over time; parity is measured on nominal supply and the panel shows both burn totals.</li>
+          <li><strong>Venue risk.</strong> pump.fun and Pons are third-party programs. A change in their fees, graduation rules or creator share changes the economics here, including the burn.</li>
           <li><strong>Infrastructure.</strong> Robinhood Chain RPC availability has already required failover once. A maker that cannot read a price does nothing, which is the safe failure but still a gap.</li>
           <li><strong>Model risk.</strong> The simulator's order flow is synthetic and post-graduation pools are approximated. It ranks rules well; it does not forecast dollars.</li>
         </ul>
@@ -382,25 +404,28 @@
         <ul>
           <li>Prices used throughout: SOL $102.75, ETH $2,532.60.</li>
           <li>pump.fun graduation at 85 SOL raised; pool seeded with 79 SOL and 206.9M tokens at 1.25% fee. Pons pool seeded with the 4.2 ETH swept at the curve's final price, pool fee 0 per launch configuration 0, no creator tax after graduation. Both treated as constant product, scaled to a target market cap with quote depth proportional to the square root of price.</li>
+          <li>Creator income: Pons 2% tax on curve trades; pump.fun 0.30% of curve trades and 0.05% of pool trades, the floor of its market-cap tiers, so the post-graduation burn is a lower bound.</li>
           <li>Above launch every rule starts from the same opening positions, so tables compare behaviour rather than bag size.</li>
         </ul>
         <h3>Reproduce</h3>
-        <pre>cd server &amp;&amp; npx tsx scripts/sim-peg.ts            # full grid
-npx tsx scripts/sim-peg.ts 1000000 twine            # one market cap, one flow
-LOCK_PCT=0.15 FRONT_SOL=19.63 DEV_SOL=19.46 \
-FRONT_ETH=0.54 SEED_ETH=0.5287 npx tsx scripts/sim-peg.ts 0   # two-sided launch</pre>
+        <pre>cd server
+SOLD=1 PUMP_CREATOR_BPS=30 npx tsx scripts/sim-peg.ts 0        # Result 1, 5
+SOLD=1 PUMP_CREATOR_BPS=30 LOCK_PCT=0.15 FRONT_SOL=19.63 DEV_SOL=19.46 \
+  FRONT_ETH=0.54 SEED_ETH=0.5287 npx tsx scripts/sim-peg.ts 0   # Result 2
+SOLD=1 PUMP_CREATOR_BPS=5 npx tsx scripts/sim-peg.ts 1000000   # Result 3, 4: one cap;
+                                # repeat for 25000 100000 500000 5000000</pre>
         <h3>Glossary</h3>
         <ul>
           <li><strong>FDV</strong> — fully diluted value: price × 1 billion supply, in USD. The band is measured on FDV so both chains compare on the same footing.</li>
-          <li><strong>Front</strong> — the pool's loan to a coin's wallets at launch, repaid from harvest sells and fees.</li>
+          <li><strong>Front</strong> — the pool's loan to a coin's wallets at launch: the opening positions plus each side's reserve. Repaid from repayment sells and the pool's half of fees.</li>
           <li><strong>Clip</strong> — one maker trade.</li>
-          <li><strong>Harvest</strong> — a clip sold inside the band while a side trades above entry and its front is not yet repaid.</li>
+          <li><strong>Reserve</strong> — the cash a side holds for buying the cheap chain. Fixed at launch, refilled only by that side's own sells and fees.</li>
         </ul>
       </section>
 
       <footer class="foot">
         <span>Twinpad · twinpad.one</span>
-        <span>Whitepaper v1.0 · September 2026</span>
+        <span>Whitepaper v1.1 · September 2026</span>
         <span>Parameters are configuration and may change; the coin page shows the values in force.</span>
       </footer>
     </div>
