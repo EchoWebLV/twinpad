@@ -72,7 +72,7 @@ cd lz && bash deploy-program.sh --confirm  # runs: solana program deploy --progr
 ```
 3. Create the OFT Adapter for the pump.fun mint (writes `lz/deployments/solana-mainnet/OFT.json`):
 ```bash
-cd poc/oft-twin/lz && pnpm hardhat lz:oft-adapter:solana:create --eid 30168 --program-id 3j8E9XzJ5LpKPcHMWyB36oE1ju9CZ2MvMXTYqFdn97MZ --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --token-program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+cd poc/oft-twin/lz && pnpm hardhat lz:oft-adapter:solana:create --eid 30168 --program-id 3j8E9XzJ5LpKPcHMWyB36oE1ju9CZ2MvMXTYqFdn97MZ --mint 2QFZpv8PHcJXNLHZd6S3pEFcf6tpog1BZvVLHGE85Vrb --token-program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
 ```
 4. Deploy LockstepOFT on Robinhood Chain (writes `lz/deployments/robinhood-mainnet/LockstepOFT.json`):
 ```bash
