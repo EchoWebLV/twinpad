@@ -12,6 +12,12 @@ RPC=$(grep -E '^RPC_URL_SOLANA=' .env | cut -d= -f2- | tr -d '"' | tr -d "'")
 SIZE=$(stat -f%z "$SO")
 PROG=$(solana-keygen pubkey "$KP")
 DEP=$(solana-keygen pubkey "$DEPLOYER")
+if [ "${1:-}" = "--close-buffers" ]; then
+  echo "== closing upload buffers owned by $DEP (rent goes back to the deployer) =="
+  solana program show --buffers --buffer-authority "$DEP" --url "$RPC"
+  solana program close --buffers --authority "$DEPLOYER" --recipient "$DEP" --keypair "$DEPLOYER" --url "$RPC"
+  echo "balance   $(solana balance "$DEP" --url "$RPC")"; exit 0
+fi
 echo "== OFT program deploy ${1:-[DRY RUN]} =="
 echo "program   $PROG"
 echo "binary    $SO ($SIZE bytes)"
@@ -38,10 +44,10 @@ if [ "${1:-}" != "--confirm" ]; then
   echo "dry run only. To deploy:  bash deploy-program.sh --confirm"; exit 0
 fi
 if ! solana program deploy --program-id "$KP" "$SO" --url "$RPC" --keypair "$DEPLOYER" \
-     --max-len "$SIZE" --with-compute-unit-price 50000 --use-rpc; then
-  echo "!! deploy failed. If it stopped midway the SOL sits in a buffer account:"
-  echo "   solana program show --buffers --keypair $DEPLOYER --url \"\$RPC\"     (list)"
-  echo "   rerun this script with the CLI's suggested --buffer, or refund with: solana program close --buffers --keypair $DEPLOYER --url \"\$RPC\""
+     --max-len "$SIZE" --with-compute-unit-price 50000 --max-sign-attempts 50 --use-rpc; then
+  echo "!! deploy failed. If it stopped midway the rent sits in a buffer account owned by the deployer."
+  echo "   refund it:   bash deploy-program.sh --close-buffers      then rerun:   bash deploy-program.sh --confirm"
+  echo "   (or resume with the CLI's printed --buffer keypair: solana-keygen recover -o buffer.json, then add --buffer buffer.json)"
   exit 1
 fi
 echo "== deployed =="
