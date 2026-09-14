@@ -1,19 +1,11 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getJson } from "../../lib/api";
 
-/** Twinpad mark: two coins, one price. The lens they share is the band the market maker holds. */
-export function Mark({ size = 22 }: { size?: number }) {
-  const lens = useId();
-  return (
-    <svg className="mark" viewBox="0 0 32 24" width={(size * 32) / 24} height={size} aria-hidden="true">
-      <defs><clipPath id={lens}><circle cx="11" cy="12" r="9" /></clipPath></defs>
-      <circle cx="11" cy="12" r="9" fill="var(--ink)" />
-      <g clipPath={`url(#${lens})`}><circle className="mv" cx="21" cy="12" r="9" fill="var(--y)" /></g>
-      <circle className="mv" cx="21" cy="12" r="8" fill="none" stroke="var(--ink)" strokeWidth="2" />
-    </svg>
-  );
+/** Twinpad mark: the cat, half yellow half black — one coin, two chains. */
+export function Mark({ size = 30 }: { size?: number }) {
+  return <img className="mark" src="/logo.png" width={size} height={size} alt="" />;
 }
 
 export function Nav() {

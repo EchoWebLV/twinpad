@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" fill="#080808"/>
-  <g transform="translate(2.4 5.8) scale(0.85)">
-    <clipPath id="lens"><circle cx="11" cy="12" r="9"/></clipPath>
-    <circle cx="11" cy="12" r="9" fill="#f1eee6"/>
-    <circle cx="21" cy="12" r="9" fill="#ffd400" clip-path="url(#lens)"/>
-    <circle cx="21" cy="12" r="8" fill="none" stroke="#f1eee6" stroke-width="2"/>
-  </g>
-</svg>

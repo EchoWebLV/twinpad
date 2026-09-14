@@ -64,9 +64,8 @@ html.anim .r { animation: rise 0.8s var(--ease) both; animation-delay: calc(var(
 .rail b { color: var(--y); font-weight: 500; }
 .nav { display: flex; align-items: center; height: 76px; border-bottom: 1px solid var(--line); gap: 36px; }
 .brand { display: flex; align-items: center; gap: 12px; font-family: var(--display); font-weight: 900; font-size: 15px; letter-spacing: 0.22em; text-transform: uppercase; }
-.mark { flex: none; overflow: visible; }
-.mark .mv { transition: transform 0.45s var(--ease); }
-.brand:hover .mark .mv { transform: translateX(-3px); }
+.mark { flex: none; transition: transform 0.45s var(--ease); }
+.brand:hover .mark { transform: rotate(-8deg) scale(1.08); }
 .foot .brand { font-size: 10px; gap: 8px; color: var(--dim); }
 .links { display: flex; gap: 26px; }
 .links a { position: relative; font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mute); padding: 6px 0; }
