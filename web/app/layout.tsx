@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Duo Aura Pad",
+  title: "Twinpad",
   description: "One coin, two chains. Launch on pump.fun and Pons at the same price, held in a 5% band by a market maker.",
 };
 
