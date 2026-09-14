@@ -3,6 +3,7 @@ import {
   createWalletClient,
   decodeEventLog,
   encodeFunctionData,
+  fallback,
   getAddress,
   http,
   parseAbi,
@@ -84,13 +85,21 @@ export const escrowAbi = parseAbi([
 
 export const TOKEN_SUPPLY = 1_000_000_000; // launch config 0: 1e27 wei-units = 1e9 tokens
 
+/** `rpcUrl` may list several endpoints, comma-separated: tried in order, the next one on any error (a 403 challenge, a timeout). */
+export function rpcTransport(rpcUrl: string) {
+  const urls = rpcUrl.split(",").map((u) => u.trim()).filter(Boolean);
+  if (urls.length === 0) throw new Error("EVM_RPC_URL is empty");
+  const hs = urls.map((u) => http(u, { timeout: 20_000 }));
+  return hs.length === 1 ? hs[0] : fallback(hs, { rank: false, retryCount: 0 });
+}
+
 export function publicClient(rpcUrl: string): PublicClient {
-  return createPublicClient({ chain: ROBINHOOD_CHAIN, transport: http(rpcUrl, { timeout: 20_000 }) });
+  return createPublicClient({ chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl) });
 }
 
 export function walletClient(rpcUrl: string, privateKey: string): WalletClient {
   const account = privateKeyToAccount(privateKey as Hex);
-  return createWalletClient({ account, chain: ROBINHOOD_CHAIN, transport: http(rpcUrl, { timeout: 20_000 }) });
+  return createWalletClient({ account, chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl) });
 }
 
 export function addressOf(privateKey: string): Address {

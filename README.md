@@ -92,7 +92,7 @@ Fill in `.env`:
 - `POOL_EVM_KEY` — 0x private key of the pool's Robinhood Chain wallet.
 - `ADMIN_TOKEN` — any long random string; the `/admin` page and `/api/admin/*` need it.
 - `PINATA_JWT` — Pinata v3 JWT for IPFS pinning.
-- RPC URLs (`SOLANA_RPC_URL`, `EVM_RPC_URL`). The public Solana RPC works but is slow. Use `https://rpc.mainnet.chain.robinhood.com` for Robinhood Chain: `rpc.ordofi.network` is load-balanced over a replica that lags hundreds of blocks, so balances and freshly launched tokens intermittently vanish.
+- RPC URLs (`SOLANA_RPC_URL`, `EVM_RPC_URL`). The public Solana RPC works but is slow. `EVM_RPC_URL` may be a comma-separated list, tried in order and the next one on any error: `https://robinhood-rpc.publicnode.com,https://rpc.mainnet.chain.robinhood.com,https://rpc.ordofi.network`. The official `rpc.mainnet.chain.robinhood.com` answers some hosts with a Cloudflare 403 challenge page; `rpc.ordofi.network` is load-balanced over a replica that lags hundreds of blocks, so balances and freshly launched tokens intermittently vanish there.
 
 Any value left as `<fill>` is treated as unset.
 
