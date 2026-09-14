@@ -181,8 +181,9 @@ def build_local_tx(creator: Pubkey, mint: Pubkey, uri: str, dev_buy_sol: float, 
 
 
 def with_fresh_blockhash(rpc_url: str, tx: VersionedTransaction) -> VersionedTransaction:
-    """PumpPortal builds the tx with a blockhash from its own node. A lagging RPC node may not know it yet
-    (BlockhashNotFound at preflight), so stamp a blockhash fetched from the RPC we actually send through."""
+    """PumpPortal builds the tx with a blockhash from its own node. Stamp one fetched at 'confirmed' from the RPC we
+    send through, and preflight at 'confirmed' too: sendTransaction preflights at 'finalized' by default, whose bank
+    runs ~32 slots behind and does not contain a fresh blockhash (BlockhashNotFound, reproduced with simulateTransaction)."""
     bh = rpc(rpc_url, "getLatestBlockhash", [{"commitment": "confirmed"}])["value"]["blockhash"]
     m = tx.message
     if not isinstance(m, MessageV0):
@@ -198,11 +199,12 @@ def send_and_confirm(rpc_url: str, unsigned: VersionedTransaction, signers: list
         signed = VersionedTransaction(fresh.message, signers)
         try:
             sig = rpc(rpc_url, "sendTransaction", [base64.b64encode(bytes(signed)).decode(),
-                                                   {"encoding": "base64", "skipPreflight": False, "maxRetries": 3}])
+                                                   {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed",
+                                                        "maxRetries": 3}])
             break
         except RuntimeError as e:
             if "BlockhashNotFound" in str(e) and attempt < 2:
-                print(f"blockhash not known to the RPC yet, retrying with a new one ({attempt + 1}/3)")
+                print(f"blockhash rejected at preflight, retrying with a new one ({attempt + 1}/3)")
                 time.sleep(2)
                 continue
             raise
@@ -263,7 +265,7 @@ def main() -> None:
     if creator:
         print(f"creator   {creator.pubkey()}")
         try:
-            lam = rpc(rpc_url, "getBalance", [str(creator.pubkey())])["value"]
+            lam = rpc(rpc_url, "getBalance", [str(creator.pubkey()), {"commitment": "confirmed"}])["value"]
             need = dev_buy + 0.03
             print(f"balance   {lam / 1e9:.4f} SOL  (need dev buy {dev_buy} SOL + ~0.03 SOL fees/rent = {need:.2f} SOL)")
             if lam / 1e9 < need:

@@ -8,6 +8,7 @@ Dry run by default: prints both balances and what would move, sends nothing.
 
 The pool key is read from the pool env file (POOL_ENV in ./.env or --pool-env) and never printed.
 Refuses to drop the pool below its own POOL_MIN_SOL floor.
+Blockhash and preflight both at 'confirmed' (the default 'finalized' preflight rejects a fresh blockhash).
 """
 from __future__ import annotations
 
@@ -85,7 +86,8 @@ def build_tx(url: str, sender: Keypair, to: Pubkey, lamports: int) -> Transactio
 
 def send_and_confirm(url: str, tx: Transaction) -> str:
     sig = rpc(url, "sendTransaction", [base64.b64encode(bytes(tx)).decode(),
-                                       {"encoding": "base64", "skipPreflight": False, "maxRetries": 3}])
+                                       {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed",
+                                        "maxRetries": 3}])
     print(f"sent      {sig}")
     for _ in range(40):
         st = rpc(url, "getSignatureStatuses", [[sig]])["value"][0]
