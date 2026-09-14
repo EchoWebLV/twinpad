@@ -173,6 +173,6 @@ export function Sh({ n, title, sub }: { n: string; title: string; sub?: string }
 }
 
 export const PUMP = (mint: string) => `https://pump.fun/coin/${mint}`;
-export const PONS = (token: string) => `https://ponsfamily.com/token/${token}`;
+export const PONS = (token: string) => `https://www.ponsfamily.com/launchpad/${token}`;
 export const SOLSCAN = (tx: string) => `https://solscan.io/tx/${tx}`;
 export const RHSCAN = (tx: string) => `https://robinhoodchain.blockscout.com/tx/${tx}`;
