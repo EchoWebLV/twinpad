@@ -25,6 +25,7 @@ interface StateResp {
   series: { t: number; pump: number; pons: number }[];
   inventory: { solana: { sol: number; tokens: number }; evm: { eth: number; tokens: number; escrowEth: number } } | null;
   maker: { enabled: boolean; running: boolean; halted: boolean; haltReason: string | null; trades: number };
+  locked: { pct: number; pumpTokens: number; ponsTokens: number; solLock: string; evmLock: string } | null;
   trades: { t: number; side: string; action: string; amount: string; reason: string; tx?: string; error?: string }[];
   updatedAt: number;
   errors: { pump: number; pons: number };
@@ -103,6 +104,7 @@ export default function Page() {
             <div>
               <h1>{s.meta?.name ?? id}<small>${s.meta?.symbol ?? ""}</small></h1>
               <p className="desc">{s.meta?.description}</p>
+              {s.locked && s.locked.pct > 0 && <p className="st ok" style={{ marginTop: 8 }} title={`${s.locked.pumpTokens.toLocaleString()} on pump.fun · ${s.locked.ponsTokens.toLocaleString()} on Pons`}>{s.locked.pct}% locked on both chains</p>}
             </div>
             <Status status={live ? "live" : "launching"} />
           </div>

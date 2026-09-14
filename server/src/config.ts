@@ -110,7 +110,9 @@ export const config = {
   maker: {
     band: num("BAND", 0.05),
     enabled: bool("MAKER_ENABLED", true),
-    intervalMs: num("MAKER_INTERVAL_MS", 3000),
+    intervalMs: num("MAKER_INTERVAL_MS", 1000),
+    /** Price poll for every live coin (both curves + fx). */
+    pollMs: num("POLL_INTERVAL_MS", 1000),
     maxClipUsd: num("MAKER_MAX_CLIP_USD", 300),
     minSol: num("MAKER_MIN_SOL", 0.3),
     minEth: num("MAKER_MIN_ETH", 0.01),

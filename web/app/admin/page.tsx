@@ -47,6 +47,7 @@ export default function Admin() {
       <div className="ph-row r">
         <div><h1>Admin</h1><p className="desc">Pool balances, approvals, retries and maker controls. Actions need the admin token.</p></div>
         <div className="form" style={{ marginLeft: "auto", minWidth: 280 }}>
+          <a className="btn sm" href="/admin/launch" style={{ marginBottom: 8, display: "inline-block" }}>Operator launch →</a>
           <label style={{ margin: 0 }}>Admin token<input type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => saveToken(e.target.value)} /></label>
         </div>
       </div>

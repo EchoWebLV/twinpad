@@ -185,7 +185,32 @@ POST /api/admin/coins/:id/keep                    exit timer off for this coin
 POST /api/admin/coins/:id/maker/rotate            move the Solana maker off the pump.fun creator wallet (pre-split launches)
 POST /api/admin/pool/resume                       lift the loss breaker
 GET  /api/admin/pool/status                       paused flag, closes in flight, per-coin loss / fronted / repaid / retired
+GET  /api/admin/launch/quote?lockPct=&bundleSol=&ponsEth=&cashSol=&cashEth=   operator launch shape (lock first, then the peg) + whether the pool can fund it
+POST /api/admin/launch                 token fields + {lockPct, bundleSol, ponsEth, cashSol, cashEth, maxLossUsd?}  operator launch, see below
 ```
+
+### Operator launch (hidden page `/admin/launch`)
+
+The pool launches its own coin. Nothing is owed and nothing waits for approval: the record is written
+`approved` and the scheduler starts it on its next tick. Two extra wallets, `solLock` and `evmLock`, are
+generated for it and hold the locked allocation:
+
+- **Lock first.** The Jito bundle is `create` (creator, no buy) → lock buy (`solLock`, `lockPct` of supply
+  at the fresh curve) → opening buy (`solMaker`, `bundleSol`). The fallback keeps the same order in
+  sequence. On Pons, `launchToken` exempts launcher, maker and `evmLock`; the lock wallet buys exactly
+  `lockPct` of supply (`quoteBuyForTokens`), then the maker buys `ponsEth`.
+- **The lock is never traded, swept, or closed.** Every recovery sweep and the close skip the lock
+  wallets (`close_lock_kept` step). `operator.locked` on the record and `locked` in the coin state
+  carry the token counts; the coin page shows "N% locked on both chains".
+- **Cash reserves.** `cashSol` / `cashEth` sit in the maker wallets on top of the usual keep level and
+  the recovery sweep leaves them there.
+- **Its own loss cap.** `maxLossUsd` replaces `MAX_LOSS_USD_PER_COIN` for that coin; only the loss past
+  it counts toward `MAX_LOSS_USD_POOL`, so a deliberately larger position cannot trip every other maker
+  on its own.
+- **No exit timer.** The record goes live with `retire.keep = true`; close it from `/admin`.
+
+The page prefills $2k of SOL for the bundle, parity on Pons (the ETH that lands Pons on the pump.fun FDV
+after the lock), $300 of cash a side and a $500 cap; every field is editable and the quote follows.
 
 ---
 

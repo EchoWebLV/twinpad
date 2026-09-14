@@ -11,7 +11,7 @@ import type { Recovery } from "./recover.js";
 export class Makers {
   private makers = new Map<string, Maker>();
   private coins = new Map<string, CoinState>();
-  constructor(private cfg: Config, private registry: Registry, private conn: Connection, private pub: PublicClient, private recovery?: Recovery) {}
+  constructor(private cfg: Config, private registry: Registry, private conn: Connection, private pub: PublicClient, private recovery?: Recovery, private refreshPrices?: (c: CoinState) => Promise<void>) {}
 
   register(coin: CoinState) {
     this.coins.set(coin.id, coin);
@@ -21,7 +21,7 @@ export class Makers {
     this.register(coin);
     if (this.makers.has(coin.id) || !this.cfg.maker.enabled) return;
     const keys = this.registry.keys(coin.id);
-    const m = new Maker(this.cfg, coin, this.conn, Keypair.fromSecretKey(Uint8Array.from(keys.solMaker ?? keys.solCreator)), this.pub, walletClient(this.cfg.evm.rpcUrl, keys.evmMaker), this.recovery, Keypair.fromSecretKey(Uint8Array.from(keys.solCreator)));
+    const m = new Maker(this.cfg, coin, this.conn, Keypair.fromSecretKey(Uint8Array.from(keys.solMaker ?? keys.solCreator)), this.pub, walletClient(this.cfg.evm.rpcUrl, keys.evmMaker), this.recovery, Keypair.fromSecretKey(Uint8Array.from(keys.solCreator)), this.refreshPrices);
     this.makers.set(coin.id, m);
     m.start();
     console.log(`[maker ${coin.id}] armed`);

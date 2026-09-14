@@ -37,6 +37,11 @@ export class Poller {
     await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
   }
 
+  /** Re-read both sides of one coin now (the maker calls this right after a trade). */
+  async refresh(c: CoinState) {
+    await this.one(c, c.fx.SOL && c.fx.ETH ? c.fx : await fx());
+  }
+
   private async one(c: CoinState, rates: { SOL: number; ETH: number }) {
     c.fx = rates;
     const mint = new PublicKey(c.pair.pumpMint);

@@ -71,7 +71,11 @@ export interface LaunchRecord {
   boostSol: number;
   devShareBps: number;
   devShareBpsFunded: number;
-  wallets: { pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
+  wallets: {
+    pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string;
+    /** Operator launches only: the locked-allocation wallets (bought at open, never sold, untouched at close). */
+    solLock?: string; evmLock?: string;
+  };
   payment: {
     chain: PaymentChain; unit: "SOL" | "ETH";
     /** Payment address on `chain`. */
@@ -106,14 +110,39 @@ export interface LaunchRecord {
   waterfall: null;
   retire: Retire | null;
   quote: Quote;
+  /** Set on launches the operator made from the hidden route (no deposit, explicit sizing, locked allocation). Null on paid launches. */
+  operator: OperatorLaunch | null;
+}
+
+/**
+ * The operator's own launch: the pool buys a locked share of the supply on both chains at open (never sold, left alone at
+ * close), the maker opens with an explicit pump.fun bundle buy and Pons buy, and keeps extra cash per side. The lock money is
+ * not part of `front` (the maker never trades it); `locked` records what the pool sent the lock wallets and what they hold.
+ */
+export interface OperatorLaunch {
+  /** Share of the supply (percent) bought into the lock wallet on each chain, inside the pump.fun bundle / right after the Pons launch. */
+  lockPct: number;
+  /** The maker's pump.fun opening buy (gross SOL, sent in the create bundle). */
+  bundleSol: number;
+  /** The maker's Pons opening buy (gross ETH, right after the lock buy). */
+  ponsEth: number;
+  /** Extra quote kept in each maker wallet on top of the gas budget / maker cash; the recovery sweep leaves it alone. */
+  cashSol: number; cashEth: number;
+  /** Per-coin loss guard (USD) for this coin; null = MAX_LOSS_USD_PER_COIN. */
+  maxLossUsd: number | null;
+  /** What the pool sent the lock wallets (funding, incl. gas/rent margin) and what they hold once launched. */
+  /** What the pool sends each lock wallet and the gross pump.fun buy the Solana lock wallet places. */
+  lock: { fundSol: number; fundEth: number; buySol: number };
+  locked: { lockSol: number; lockEth: number; pumpTokens: number; ponsTokens: number; txSol: string | null; txEth: string | null };
 }
 
 /** Secret keys for one launch. Written 0600, never served. */
 /** solMaker is absent on records made before the creator/maker split; those coins keep trading from solCreator. */
-export interface LaunchKeys { mint: number[]; solCreator: number[]; solMaker?: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string }
+export interface LaunchKeys { mint: number[]; solCreator: number[]; solMaker?: number[]; payment: number[]; evmLauncher: string; evmMaker: string; evmPayment: string; solLock?: number[]; evmLock?: string }
 
 export interface NewRecordInput {
   id: string; token: TokenMeta; devWallet: string; chain: PaymentChain; wallets: LaunchRecord["wallets"]; quote: Quote; deadlineAt: number; now: number;
+  operator?: OperatorLaunch | null;
 }
 
 export function newRecord(i: NewRecordInput): LaunchRecord {
@@ -145,6 +174,7 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     waterfall: null,
     retire: null,
     quote: i.quote,
+    operator: i.operator ?? null,
   };
 }
 
@@ -204,6 +234,7 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
   const l = raw.launch as Record<string, unknown> | undefined;
   if (l) l.retries ??= 0;
   raw.retire ??= null;
+  raw.operator ??= null;
   return raw as unknown as LaunchRecord;
 }
 

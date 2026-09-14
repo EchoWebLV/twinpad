@@ -68,7 +68,8 @@ export default function LaunchPage() {
   if (rank(l.status) >= rank("paid")) done.add("status:paid");
   if (rank(l.status) >= rank("approved")) done.add("status:approved");
   if (l.status === "live") done.add("status:live");
-  const firstOpen = STEPS.findIndex((s) => !done.has(s.key));
+  const steps = l?.operator ? STEPS.filter((s) => s.key !== "status:paid" && s.key !== "deposit_to_pool") : STEPS;
+  const firstOpen = steps.findIndex((s) => !done.has(s.key));
   const stepAt = (k: string) => l.launch.steps.find((s) => s.name === k)?.at;
   const remaining = Math.max(0, l.payment.deadlineAt - now);
   const terminal = ["rejected", "expired", "failed"].includes(l.status);
@@ -183,7 +184,7 @@ export default function LaunchPage() {
           <div className="box r" style={{ "--i": 2 } as React.CSSProperties}>
             <h2>Progress</h2>
             <ol className="timeline">
-              {STEPS.map((s, i) => {
+              {steps.map((s, i) => {
                 const isDone = done.has(s.key);
                 const isNow = !isDone && i === firstOpen && !terminal;
                 const at = stepAt(s.key) ?? (s.key === "created" ? l.createdAt : s.key === "status:paid" ? l.payment.paidAt : s.key === "status:approved" ? l.approval.at : undefined);

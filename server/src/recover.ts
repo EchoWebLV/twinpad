@@ -41,8 +41,8 @@ export class Recovery {
   keep(c: CoinState) {
     const { maker, recover } = this.ctx.cfg;
     return {
-      sol: maker.minSol + (recover.keepClips * maker.maxClipUsd) / c.fx.SOL + 0.01,
-      eth: maker.minEth + (recover.keepClips * maker.maxClipUsd) / c.fx.ETH + 0.002,
+      sol: maker.minSol + (recover.keepClips * maker.maxClipUsd) / c.fx.SOL + 0.01 + c.keepExtra.sol,
+      eth: maker.minEth + (recover.keepClips * maker.maxClipUsd) / c.fx.ETH + 0.002 + c.keepExtra.eth,
     };
   }
 

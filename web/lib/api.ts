@@ -1,8 +1,8 @@
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787";
 
 /** Reads give up after 15 s so one stalled request cannot hold a page's whole refresh. */
-export async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(`${API}${path}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+export async function getJson<T>(path: string, admin?: string): Promise<T> {
+  const r = await fetch(`${API}${path}`, { cache: "no-store", signal: AbortSignal.timeout(15_000), headers: admin ? { "x-admin-token": admin } : undefined });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? r.statusText);
   return j as T;
@@ -29,7 +29,7 @@ export interface Launch {
   token: { name: string; symbol: string; description: string; imageCid: string; twitter: string; website: string; telegram: string };
   devWallet: string;
   boostSol: number;
-  wallets: { pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string };
+  wallets: { pumpMint: string; solCreator: string; solMaker: string; evmLauncher: string; evmMaker: string; payment: string; evmPayment: string; solLock?: string; evmLock?: string };
   payment: {
     chain: "sol" | "eth"; unit: "SOL" | "ETH"; address: string; required: number; received: number; paidAt: number | null; deadlineAt: number;
     txs: { tx: string; amount: number; late: boolean }[]; foreign: { tx: string; amount: number }[]; claimed: string[];
@@ -45,6 +45,25 @@ export interface Launch {
     sold: { pumpTokens: number; ponsTokens: number; txs: string[] }; swept: { sol: number; eth: number; txs: string[] }; error: string | null;
   } | null;
   quote: Quote;
+  /** Operator launches only: the locked allocation and the peg's chosen opening size. */
+  operator?: OperatorLaunch | null;
+}
+export interface OperatorLaunch {
+  lockPct: number; bundleSol: number; ponsEth: number; cashSol: number; cashEth: number; maxLossUsd: number | null;
+  lock: { fundSol: number; fundEth: number; buySol: number };
+  locked: { lockSol: number; lockEth: number; pumpTokens: number; ponsTokens: number; txSol: string | null; txEth: string | null };
+}
+export interface OperatorShape {
+  lock: { pct: number; tokens: number; sol: number; solGross: number; eth: number; ethGross: number; fundSol: number; fundEth: number };
+  pump: { devBuySol: number; tokens: number; supplyPct: number; fdv: number; makerFrontSol: number };
+  pons: { eth: number; tokens: number; supplyPct: number; fdv: number; makerFrontEth: number; parityEth: number };
+  pool: { sol: number; eth: number };
+  gapPct: number;
+  fx: { SOL: number; ETH: number };
+}
+export interface OperatorQuoteResp {
+  shape: OperatorShape;
+  pool: { balances: { sol: number; eth: number }; free: { sol: number; eth: number }; ok: boolean; floors: { sol: number; eth: number } };
 }
 export interface CoinSummary {
   id: string; name: string; symbol: string; image: string; launchedAt: number | null; pumpMint: string; ponsToken: string;

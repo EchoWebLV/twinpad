@@ -35,6 +35,7 @@ export class Pool {
       // A close also sweeps launcher gas that was never part of front.eth, so clamp at zero per record.
       sol += Math.max(0, r.front.sol - r.front.repaidSol - r.front.writtenOffSol);
       eth += Math.max(0, r.front.eth - r.front.repaidEth);
+      if (r.operator) { sol += r.operator.locked.lockSol; eth += r.operator.locked.lockEth; }
     }
     return { sol, eth };
   }

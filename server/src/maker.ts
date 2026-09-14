@@ -30,6 +30,8 @@ export class Maker {
     private recovery?: Recovery,
     /** The pump.fun creator (collects creator fees); the maker wallet itself until the maker is rotated off it. */
     private solCreator: Keypair = solWallet,
+    /** Re-reads the coin's prices; called before the immediate re-tick that follows a trade. */
+    private refreshPrices?: (c: CoinState) => Promise<void>,
   ) {}
 
   start() {
@@ -38,6 +40,7 @@ export class Maker {
     this.coin.maker.running = true;
     const loop = async () => {
       this.inTick = true;
+      const before = this.coin.maker.trades;
       try {
         await this.tick();
       } catch (e) {
@@ -45,8 +48,12 @@ export class Maker {
       } finally {
         this.inTick = false;
       }
-      if (!this.coin.maker.halted) this.timer = setTimeout(loop, this.cfg.maker.intervalMs);
-      else this.coin.maker.running = false;
+      if (this.coin.maker.halted) { this.coin.maker.running = false; return; }
+      if (!this.timer && !this.coin.maker.running) return; // stopped while the tick ran
+      // A tick that traded re-ticks at once on fresh prices: the gap it was closing is usually still open.
+      const traded = this.coin.maker.trades !== before;
+      if (traded && this.refreshPrices) await this.refreshPrices(this.coin).catch(() => undefined);
+      this.timer = setTimeout(loop, traded ? 0 : this.cfg.maker.intervalMs);
     };
     void loop();
   }
@@ -109,9 +116,10 @@ export class Maker {
     if (!st.pump || !st.pons || !st.fx.SOL || !st.fx.ETH) return false;
     const loss = lossUsd(st.front, inv, { pump: st.pump.price, pons: st.pons.price }, st.fx, st.repaid);
     st.maker.lossUsd = Math.round(loss * 100) / 100;
-    if (loss <= this.cfg.guard.maxLossUsdPerCoin) return false;
+    const cap = st.maxLossUsd ?? this.cfg.guard.maxLossUsdPerCoin;
+    if (loss <= cap) return false;
     st.maker.halted = true;
-    st.maker.haltReason = `loss guard: down $${loss.toFixed(0)} > $${this.cfg.guard.maxLossUsdPerCoin}`;
+    st.maker.haltReason = `loss guard: down $${loss.toFixed(0)} > $${cap}`;
     void alert(`[maker ${st.id}] HALTED: ${st.maker.haltReason}`);
     return true;
   }
@@ -189,16 +197,21 @@ export class Maker {
     const reason = `gap ${(g.gap * 100).toFixed(2)}% > band ${(this.cfg.maker.band * 100).toFixed(1)}%, ${g.expensive} expensive`;
 
     const cheap = g.expensive === "pump" ? "pons" : "pump";
+    const pump = st.pump, pons = st.pons;
+    // Both legs at once: they sit on different chains and different wallets, so nothing waits on the other's confirmation.
+    const sellLeg = async () => {
     // 1) sell on the expensive side: the scaled clip, or what is left in inventory (not under a quarter of the base clip)
     if (g.expensive === "pump") {
-      const tokens = sizeSell(clipUsd / st.pump.price, inv.solana.tokens, this.cfg.maker.maxClipUsd / st.pump.price);
-      if (tokens > 0) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o), tokens * st.pump.price);
+      const tokens = sizeSell(clipUsd / pump.price, inv.solana.tokens, this.cfg.maker.maxClipUsd / pump.price);
+      if (tokens > 0) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o), tokens * pump.price);
       else this.skip("pump", "sell", reason, `inventory ${inv.solana.tokens.toFixed(0)} tokens`);
     } else {
-      const tokens = sizeSell(clipUsd / st.pons.price, inv.evm.tokens, this.cfg.maker.maxClipUsd / st.pons.price);
-      if (tokens > 0) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct), tokens * st.pons.price);
+      const tokens = sizeSell(clipUsd / pons.price, inv.evm.tokens, this.cfg.maker.maxClipUsd / pons.price);
+      if (tokens > 0) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct), tokens * pons.price);
       else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} tokens`);
     }
+    };
+    const buyLeg = async () => {
     // 2) buy on the cheap side, unless the peg already holds its ceiling of bought tokens there (sells release it).
     // A scaled clip the wallet cannot fund above its floor shrinks to what it can, never below a quarter of the base clip.
     const ceilingUsd = this.ceilingUsd();
@@ -214,6 +227,8 @@ export class Maker {
       if (eth > 0) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct), eth * st.fx.ETH);
       else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
     }
+    };
+    await Promise.all([sellLeg(), buyLeg()]);
     await this.recover(inv, tradesBefore);
     st.persist();
   }

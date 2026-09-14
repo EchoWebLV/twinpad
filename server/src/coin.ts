@@ -39,6 +39,10 @@ export class CoinState {
   retiredAt: number | null = null;
   /** Our entry price in USD per token (opening FDV / supply); selldown only sells at or above it. */
   entryPrice = 0;
+  /** Operator launches: their own loss cap (null = MAX_LOSS_USD_PER_COIN), cash the recovery sweep leaves on top of the keep level, and the locked allocation. */
+  maxLossUsd: number | null = null;
+  keepExtra = { sol: 0, eth: 0 };
+  locked: { pct: number; pumpTokens: number; ponsTokens: number; solLock: string; evmLock: string } | null = null;
   errors = { pump: 0, pons: 0 };
   lastError: { pump: string | null; pons: string | null } = { pump: null, pons: null };
   private file: string;
@@ -126,6 +130,7 @@ export class CoinState {
       series,
       inventory: this.inventory,
       front: { ...this.front, repaid: this.repaid, retiredAt: this.retiredAt },
+      locked: this.locked,
       maker: this.maker,
       trades: this.trades.slice(-50),
       updatedAt: Date.now(),

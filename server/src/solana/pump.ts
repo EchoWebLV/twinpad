@@ -188,7 +188,7 @@ export async function waitForSignature(conn: Connection, sig: string, ms: number
     const v = st.value[0];
     if (v?.err) throw new Error(`transaction ${sig} failed: ${JSON.stringify(v.err)}`);
     if (v && (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized")) return true;
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 500));
   }
   return false;
 }

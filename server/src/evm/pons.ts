@@ -94,12 +94,12 @@ export function rpcTransport(rpcUrl: string) {
 }
 
 export function publicClient(rpcUrl: string): PublicClient {
-  return createPublicClient({ chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl) });
+  return createPublicClient({ chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl), pollingInterval: 500 });
 }
 
 export function walletClient(rpcUrl: string, privateKey: string): WalletClient {
   const account = privateKeyToAccount(privateKey as Hex);
-  return createWalletClient({ account, chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl) });
+  return createWalletClient({ account, chain: ROBINHOOD_CHAIN, transport: rpcTransport(rpcUrl), pollingInterval: 500 });
 }
 
 export function addressOf(privateKey: string): Address {
@@ -204,6 +204,25 @@ export async function quoteBuy(client: PublicClient, curve: Address, quoteIn: bi
     spent = grossed < quoteIn ? grossed : quoteIn;
   }
   return { tokensOut, spent, refund: quoteIn - spent, snipeBps };
+}
+
+/** Gross ETH (fee + creator tax + the recipient's snipe tax on top) that takes exactly `tokensOut` from the curve. */
+export async function quoteBuyForTokens(client: PublicClient, curve: Address, tokensOut: bigint, recipient: Address) {
+  const c = (functionName: any, args: any[] = []) =>
+    client.readContract({ address: curve, abi: curveAbi, functionName, args } as any) as Promise<any>;
+  const [reserves, sellable, feeBps, creatorTaxBps, rawSnipe] = await Promise.all([
+    c("getReserves"), c("sellableTokens"), c("feeBps"), c("creatorTaxBps"), c("currentSnipeTaxBps", [recipient]),
+  ]);
+  const [quoteReserve, tokenReserve] = reserves as [bigint, bigint];
+  if (tokensOut > sellable) throw new Error(`curve only has ${Number(sellable) / 1e18} sellable tokens`);
+  let snipeBps = rawSnipe as bigint;
+  if (snipeBps > 0n) {
+    const max = BPS - feeBps - creatorTaxBps - 100n;
+    if (snipeBps > max) snipeBps = max;
+  }
+  const net = amountIn(tokensOut, quoteReserve, tokenReserve);
+  const quoteIn = ceilDiv(net * BPS, BPS - feeBps - creatorTaxBps - snipeBps);
+  return { quoteIn, net, snipeBps };
 }
 
 export async function quoteSell(client: PublicClient, curve: Address, tokensIn: bigint) {

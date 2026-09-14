@@ -8,6 +8,7 @@ import { publicClient, launchPreflight, PONS } from "./evm/pons.js";
 import { fx } from "./fx.js";
 import { pinFile, pinJson } from "./ipfs.js";
 import { createLaunch } from "./paid.js";
+import { createOperatorLaunch, shapeQuote, validateOperatorInput, LOCK_ETH_EXTRA, type OperatorInput } from "./operator.js";
 import { buildQuote, sizeFront, frontForDevBuy } from "./quote.js";
 import { Recovery } from "./recover.js";
 import { ETH_TX_HASH, PaymentWatcher, refundDeposit, refundFromPool } from "./payments.js";
@@ -39,7 +40,8 @@ async function main() {
 
   // ---- live coins
   const coins = new Map<string, CoinState>();
-  const makers = new Makers(config, registry, conn, pub, new Recovery({ cfg: config, registry, pool, conn, pub }));
+  const poller = new Poller(conn, pub, () => [...coins.values()], config.maker.pollMs);
+  const makers = new Makers(config, registry, conn, pub, new Recovery({ cfg: config, registry, pool, conn, pub }), (c) => poller.refresh(c));
   const mount = (rec: LaunchRecord) => {
     if (coins.has(rec.id)) return coins.get(rec.id)!;
     const c = new CoinState(
@@ -51,6 +53,11 @@ async function main() {
     c.repaid = { sol: rec.front.repaidSol, eth: rec.front.repaidEth };
     c.retiredAt = rec.front.retiredAt;
     c.entryPrice = rec.seed ? rec.seed.openingFdv / 1e9 : 0;
+    if (rec.operator) {
+      c.maxLossUsd = rec.operator.maxLossUsd;
+      c.keepExtra = { sol: rec.operator.cashSol, eth: rec.operator.cashEth };
+      c.locked = { pct: rec.operator.lockPct, pumpTokens: rec.operator.locked.pumpTokens, ponsTokens: rec.operator.locked.ponsTokens, solLock: rec.wallets.solLock ?? "", evmLock: rec.wallets.evmLock ?? "" };
+    }
     if (!rec.retire) { rec.retire = newRetire(rec.launch.launchedAt ?? Date.now(), config.retire); registry.save(rec); }
     coins.set(rec.id, c);
     makers.arm(c);
@@ -62,7 +69,7 @@ async function main() {
     coins.delete(id);
   };
   for (const rec of registry.list({ status: ["live"] })) mount(rec);
-  new Poller(conn, pub, () => [...coins.values()]).start();
+  poller.start();
 
   // ---- quote from live chain params. AUTO_SIZE: the pool fronts what it can spare per open slot, between
   // FRONT_*_MIN and FRONT_*; SOL never above the parity dev buy (pump.fun landing on the Pons floor) since
@@ -202,6 +209,33 @@ async function main() {
   });
   router.get("/api/pool", () => pool.summary(registry));
   router.get("/api/chain/blockhash", async () => ({ blockhash: (await conn.getLatestBlockhash("confirmed")).blockhash }));
+
+  // ---- operator launch (hidden page): lock + two-sided open from the pool, straight into the queue
+  const operatorShape = async (op: OperatorInput) => {
+    const [rates, pf] = await Promise.all([fx(), preflight()]);
+    const inputs = {
+      ...op, fx: rates,
+      pons: { phantomEth: Number(formatEther(pf.config.phantomQuote)), supply: Number(formatEther(pf.config.supply)), feeBps: Number(pf.config.curveFeeBps), creatorTaxBps: config.evm.creatorTaxBps },
+      solGasBudget: config.launch.solGasBudget, evmMakerCash: config.launch.evmMakerCash,
+      launcherEth: Number(formatEther(pf.launchFee)) + config.launch.evmGasLauncher,
+    };
+    return { shape: shapeQuote(inputs), inputs };
+  };
+  router.get("/api/admin/launch/quote", async (_p, _b, h) => {
+    const q = query(h);
+    const op = validateOperatorInput({ lockPct: q.lockPct ?? 15, bundleSol: q.bundleSol ?? 1, ponsEth: q.ponsEth ?? 0.01, cashSol: q.cashSol ?? 0, cashEth: q.cashEth ?? 0, maxLossUsd: q.maxLossUsd ?? null });
+    const { shape } = await operatorShape(op);
+    const b = await poolBalances();
+    const free = { sol: Math.round((b.sol - config.pool.minSol) * 1e6) / 1e6, eth: Math.round((b.eth - config.pool.minEth) * 1e6) / 1e6 };
+    return { shape, pool: { balances: b, free, ok: free.sol >= shape.pool.sol && free.eth >= shape.pool.eth, floors: { sol: config.pool.minSol, eth: config.pool.minEth } }, lockEthExtra: LOCK_ETH_EXTRA };
+  }, { admin: true });
+  router.post("/api/admin/launch", async (_p, body) => {
+    if (scheduler.paused) throw new HttpError(409, "pool is paused (breaker); resume first");
+    const { rec: r, shape } = await createOperatorLaunch({ registry, now: Date.now, publicUrl: config.server.publicUrl, pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) }, shape: operatorShape }, body);
+    console.log(`[operator] launch ${r.id} queued: lock ${shape.lock.pct}% bundle ${shape.pump.devBuySol} SOL / ${shape.pons.eth} ETH`);
+    void scheduler.tick();
+    return { record: publicRecord(r), shape };
+  }, { admin: true });
 
   router.post("/api/admin/paid/:id/approve", (p) => {
     const r = rec(p.id);

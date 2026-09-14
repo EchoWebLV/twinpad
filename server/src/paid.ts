@@ -6,7 +6,7 @@ import type { Registry } from "./registry.js";
 import { newRecord, type LaunchRecord, type PaymentChain, type Quote } from "./record.js";
 
 export interface CreateInput {
-  name: string; symbol: string; description: string; twitter?: string; telegram?: string;
+  name: string; symbol: string; description: string; twitter: string; telegram: string;
   devWallet: string; imageDataUrl: string;
   /** Extra SOL the deployer adds to the dev buy (paid with the deposit; SOL deposits only). */
   boostSol: number;
@@ -30,7 +30,10 @@ const MAX_IMAGE = 2 * 1024 * 1024;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const JPG = Buffer.from([0xff, 0xd8, 0xff]);
 
-export function validateInput(raw: unknown, maxBoostSol = 0): CreateInput & { image: Buffer } {
+export interface TokenInput { name: string; symbol: string; description: string; twitter: string; telegram: string; imageDataUrl: string; image: Buffer }
+
+/** The token fields every launch shares: name, symbol, description, socials and the PNG/JPEG image (data URL). */
+export function validateToken(raw: unknown): TokenInput {
   const i = (raw ?? {}) as Record<string, unknown>;
   const str = (k: string, max: number, required = false) => {
     const v = typeof i[k] === "string" ? (i[k] as string).trim() : "";
@@ -42,8 +45,22 @@ export function validateInput(raw: unknown, maxBoostSol = 0): CreateInput & { im
   const symbol = str("symbol", 10, true).toUpperCase();
   if (!/^[A-Z0-9]+$/.test(symbol)) throw new Error("symbol must be letters and digits");
   const description = str("description", 500, true);
+  const url = typeof i.imageDataUrl === "string" ? i.imageDataUrl : "";
+  const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(url);
+  if (!m) throw new Error("image must be a PNG or JPEG data URL");
+  const image = Buffer.from(m[2], "base64");
+  if (image.length > MAX_IMAGE) throw new Error("image max 2 MB");
+  if (!(image.subarray(0, 4).equals(PNG) || image.subarray(0, 3).equals(JPG))) throw new Error("image bytes are not PNG/JPEG");
+  return { name, symbol, description, imageDataUrl: url, image, twitter: str("twitter", 120), telegram: str("telegram", 120) };
+}
+
+export function validateInput(raw: unknown, maxBoostSol = 0): CreateInput & { image: Buffer } {
+  const i = (raw ?? {}) as Record<string, unknown>;
+  const t = validateToken(raw);
   const payChain: PaymentChain = i.payChain === "eth" ? "eth" : i.payChain === "sol" || i.payChain == null ? "sol" : (() => { throw new Error("payChain must be sol or eth"); })();
-  let devWallet = str("devWallet", 64, true);
+  let devWallet = typeof i.devWallet === "string" ? i.devWallet.trim() : "";
+  if (!devWallet) throw new Error("devWallet is required");
+  if (devWallet.length > 64) throw new Error("devWallet max 64 chars");
   if (payChain === "eth") {
     if (!isAddress(devWallet)) throw new Error("devWallet is not an EVM address");
     devWallet = getAddress(devWallet);
@@ -59,26 +76,13 @@ export function validateInput(raw: unknown, maxBoostSol = 0): CreateInput & { im
   const boostSol = Math.round(boostRaw * 1e6) / 1e6;
   if (boostSol > maxBoostSol) throw new Error(maxBoostSol > 0 ? `boostSol max ${maxBoostSol} SOL` : "boosts are off");
   if (boostSol > 0 && payChain !== "sol") throw new Error("boostSol needs a SOL deposit");
-  const url = typeof i.imageDataUrl === "string" ? i.imageDataUrl : "";
-  const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(url);
-  if (!m) throw new Error("image must be a PNG or JPEG data URL");
-  const image = Buffer.from(m[2], "base64");
-  if (image.length > MAX_IMAGE) throw new Error("image max 2 MB");
-  if (!(image.subarray(0, 4).equals(PNG) || image.subarray(0, 3).equals(JPG))) throw new Error("image bytes are not PNG/JPEG");
-  return {
-    name, symbol, description, devWallet, payChain, boostSol, imageDataUrl: url, image,
-    twitter: str("twitter", 120), telegram: str("telegram", 120),
-  };
+  return { ...t, devWallet, payChain, boostSol };
 }
 
-/** Validate, store the image, pin image + metadata, generate keys, write the record. No chain calls. */
-export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchRecord> {
-  const input = validateInput(raw, d.maxBoostSol);
-  const id = d.registry.newId(input.symbol);
-  const website = d.publicUrl ? `${d.publicUrl}/coin/${id}` : "";
+/** Store the image, pin it and the pump.fun metadata JSON. Returns the CIDs. */
+export async function pinToken(d: Pick<CreateDeps, "registry" | "pin">, id: string, input: TokenInput, website: string) {
   fs.mkdirSync(d.registry.dir(id), { recursive: true });
   fs.writeFileSync(d.registry.imagePath(id), input.image);
-
   const imageCid = await d.pin.file(d.registry.imagePath(id), `${input.symbol}.png`);
   const meta = {
     name: input.name, symbol: input.symbol, description: input.description,
@@ -86,6 +90,15 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
     twitter: input.twitter || undefined, telegram: input.telegram || undefined, website: website || undefined,
   };
   const metadataCid = await d.pin.json(meta, `${input.symbol}-metadata.json`);
+  return { imageCid, metadataCid, metadataUri: `https://ipfs.io/ipfs/${metadataCid}` };
+}
+
+/** Validate, store the image, pin image + metadata, generate keys, write the record. No chain calls. */
+export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchRecord> {
+  const input = validateInput(raw, d.maxBoostSol);
+  const id = d.registry.newId(input.symbol);
+  const website = d.publicUrl ? `${d.publicUrl}/coin/${id}` : "";
+  const cids = await pinToken(d, id, input, website);
 
   const mint = Keypair.generate();
   const solCreator = Keypair.generate();
@@ -107,11 +120,7 @@ export async function createLaunch(d: CreateDeps, raw: unknown): Promise<LaunchR
     devWallet: input.devWallet,
     chain: input.payChain,
     quote: await d.quote(input.boostSol),
-    token: {
-      name: input.name, symbol: input.symbol, description: input.description,
-      twitter: input.twitter ?? "", website, telegram: input.telegram ?? "",
-      imageCid, metadataCid, metadataUri: `https://ipfs.io/ipfs/${metadataCid}`,
-    },
+    token: { name: input.name, symbol: input.symbol, description: input.description, twitter: input.twitter, website, telegram: input.telegram, ...cids },
     wallets: {
       pumpMint: mint.publicKey.toBase58(),
       solCreator: solCreator.publicKey.toBase58(),

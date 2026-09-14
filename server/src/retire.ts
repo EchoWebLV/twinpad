@@ -11,6 +11,7 @@ import { escrowAbi, PONS, walletClient } from "./evm/pons.js";
 import { measureActivity, withTimeout } from "./activity.js";
 import { decide } from "./exit.js";
 import { alert } from "./alerts.js";
+import { breakerContribution } from "./operator.js";
 import type { CoinState } from "./coin.js";
 import type { Makers } from "./makers.js";
 
@@ -115,6 +116,13 @@ export async function closeCoin(ctx: RetireCtx, rec: LaunchRecord, reason: strin
       }
     }
 
+    // ---- operator lock wallets are never sold or swept by a close: they keep the allocation
+    if (rec.operator && (rec.operator.locked.pumpTokens > 0 || rec.operator.locked.ponsTokens > 0)) {
+      step(rec, "close_lock_kept", now(), { solLock: rec.wallets.solLock, evmLock: rec.wallets.evmLock, pumpTokens: rec.operator.locked.pumpTokens, ponsTokens: rec.operator.locked.ponsTokens });
+      save();
+      log(`lock wallets untouched: ${rec.operator.locked.pumpTokens} pump.fun + ${rec.operator.locked.ponsTokens} Pons tokens stay locked`);
+    }
+
     // ---- deployer boost: its share of everything that came back, to the dev wallet
     if (rec.boostSol > 0 && rec.payment.chain === "sol" && rec.front.sol > 0) {
       const share = Math.round((rec.front.repaidSol * rec.boostSol / rec.front.sol) * 1e6) / 1e6;
@@ -181,7 +189,7 @@ export class Retirer {
     try {
       const coins = this.coins();
       // pool-wide loss breaker
-      const total = coins.reduce((s, c) => s + Math.max(0, c.maker.lossUsd ?? 0), 0);
+      const total = coins.reduce((s, c) => s + breakerContribution(c.maker.lossUsd, c.maxLossUsd), 0);
       if (total > this.ctx.cfg.guard.maxLossUsdPool) this.breaker(`pool down $${total.toFixed(0)} across live coins > $${this.ctx.cfg.guard.maxLossUsdPool}`);
       if (!this.ctx.cfg.retire.enabled) return;
       for (const c of coins) {
@@ -207,7 +215,7 @@ export class Retirer {
     console.log(`[retire ${rec.id}] measuring outside interest (${Math.round((Date.now() - rec.retire!.decideAt) / 1000)}s past decideAt)`);
     return measureActivity(this.ctx.conn, this.ctx.pub, {
       pumpMint: rec.launch.pumpMint!, ponsToken: rec.launch.ponsToken!, ponsCurve: rec.launch.ponsCurve!,
-      ours: { solana: [rec.wallets.solCreator, rec.wallets.solMaker, this.ctx.pool.sol.publicKey.toBase58()].filter(Boolean), evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, this.ctx.pool.evmAddress] },
+      ours: { solana: [rec.wallets.solCreator, rec.wallets.solMaker, rec.wallets.solLock, this.ctx.pool.sol.publicKey.toBase58()].filter((w): w is string => !!w), evm: [rec.wallets.evmMaker, rec.wallets.evmLauncher, rec.wallets.evmLock, this.ctx.pool.evmAddress].filter((w): w is string => !!w) },
       ponsFromBlock: from, price: { pump: c.pump.price, pons: c.pons.price },
     });
   }

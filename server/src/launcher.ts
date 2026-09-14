@@ -3,11 +3,11 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { formatEther, getAddress, type Address, type Hex, type PublicClient } from "viem";
 import type { Config } from "./config.js";
 import type { Registry } from "./registry.js";
-import { step, transition, type LaunchRecord } from "./record.js";
+import { newRetire, step, transition, type LaunchRecord } from "./record.js";
 import type { Pool } from "./pool.js";
 import { sweepEth, sweepSol } from "./pool.js";
 import { coinExists, readBondingCurve, sendBundle, sendSigned, signatureOf, tradeLocal, tradeLocalBundle, waitForSignature, type TradeLocalBody } from "./solana/pump.js";
-import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, readCurve, walletClient, PONS, TOKEN_SUPPLY } from "./evm/pons.js";
+import { buildLaunchCalldata, launchPreflight, parseTokenLaunched, quoteBuyForTokens, readCurve, walletClient, PONS, TOKEN_SUPPLY } from "./evm/pons.js";
 import { evmBuy, evmBalances, solanaBalances, solanaBuy } from "./trade.js";
 import { grossFromNet, quoteNetForFdv, affordableBuySol, ponsOpeningEth } from "./quote.js";
 import { alert } from "./alerts.js";
@@ -44,6 +44,13 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
   const makerW = walletClient(ctx.cfg.evm.rpcUrl, keys.evmMaker);
   const launcher = getAddress(rec.wallets.evmLauncher) as Address;
   const maker = getAddress(rec.wallets.evmMaker) as Address;
+  // Operator launches: a locked allocation is bought first on each chain from a lock wallet nothing else ever touches.
+  const op = rec.operator && rec.operator.lockPct > 0 && keys.solLock && keys.evmLock ? rec.operator : null;
+  const solLock = op ? Keypair.fromSecretKey(Uint8Array.from(keys.solLock!)) : null;
+  const evmLockW = op ? walletClient(ctx.cfg.evm.rpcUrl, keys.evmLock!) : null;
+  const evmLock = op ? getAddress(rec.wallets.evmLock!) as Address : null;
+  const lockFundSol = op ? op.lock.fundSol : 0;
+  const lockFundEth = op ? op.lock.fundEth : 0;
   const MINT = mintKp.publicKey;
   const L = rec.launch;
   const T = rec.token;
@@ -59,7 +66,7 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     const pf = await launchPreflight(ctx.pub, launcher);
     if (!pf.canLaunch || !pf.launchEnabled || !pf.config.enabled) throw new Error("Pons factory refuses launches right now");
     const launchFee = Number(formatEther(pf.launchFee));
-    const needEth = launchFee + ctx.cfg.launch.evmGasLauncher + rec.front.eth;
+    const needEth = launchFee + ctx.cfg.launch.evmGasLauncher + rec.front.eth + lockFundEth;
     if (!L.salt) L.salt = `0x${crypto.randomBytes(32).toString("hex")}`;
     step(rec, "preflight", now(), { launchFee, canLaunch: pf.canLaunch });
     save();
@@ -89,8 +96,8 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
       save();
     }
     if (!L.txs.frontSol || !L.txs.frontRhMaker) {
-      const can = await ctx.pool.canFront(rec.front.sol, needEth);
-      if (!can.ok) throw new Error(`pool below floor: ${JSON.stringify(can.balances)} needs ${rec.front.sol} SOL + ${needEth.toFixed(4)} ETH`);
+      const can = await ctx.pool.canFront(rec.front.sol + lockFundSol, needEth);
+      if (!can.ok) throw new Error(`pool below floor: ${JSON.stringify(can.balances)} needs ${round6(rec.front.sol + lockFundSol)} SOL + ${needEth.toFixed(4)} ETH`);
     }
 
     // ---- fronting: pool → maker (SOL for the opening buy + gas, incl. the deployer boost), pool → creator (create rent + tip),
@@ -111,6 +118,21 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     if (!L.txs.frontRhMaker) {
       L.txs.frontRhMaker = await ctx.pool.transferEth(maker, rec.front.eth);
       save();
+    }
+    if (op && solLock && evmLock) {
+      if (!L.txs.frontSolLock) {
+        L.txs.frontSolLock = await ctx.pool.transferSol(solLock.publicKey, round6(lockFundSol));
+        op.locked.lockSol = round6(lockFundSol);
+        op.locked.txSol = L.txs.frontSolLock;
+        save();
+      }
+      if (!L.txs.frontEthLock) {
+        L.txs.frontEthLock = await ctx.pool.transferEth(evmLock, lockFundEth);
+        op.locked.lockEth = lockFundEth;
+        op.locked.txEth = L.txs.frontEthLock;
+        step(rec, "fronting_lock", now(), { pct: op.lockPct, sol: op.locked.lockSol, eth: op.locked.lockEth, solLock: rec.wallets.solLock, evmLock: rec.wallets.evmLock, txSol: L.txs.frontSolLock, txEth: L.txs.frontEthLock });
+        save();
+      }
     }
     if (!rec.front.at) {
       rec.front = { ...rec.front, at: now(), txSol: L.txs.frontSol, txRhLauncher: L.txs.frontRhLauncher, txRhMaker: L.txs.frontRhMaker };
@@ -158,6 +180,18 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
             priorityFee: ctx.cfg.launch.jitoTipSol, // first tx's fee = bundle tip
             pool: "pump",
           },
+          ...(op && solLock
+            ? [{
+                publicKey: solLock.publicKey.toBase58(),
+                action: "buy" as const,
+                mint: MINT.toBase58(),
+                denominatedInSol: "true" as const,
+                amount: op.lock.buySol,
+                slippage: ctx.cfg.solana.slippagePct,
+                priorityFee: ctx.cfg.solana.priorityFeeSol,
+                pool: "pump" as const,
+              }]
+            : []),
           {
             publicKey: solMaker.publicKey.toBase58(),
             action: "buy",
@@ -169,11 +203,13 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
             pool: "pump",
           },
         ];
+        const last = bodies.length - 1;
         let landed = false;
         for (let attempt = 1; attempt <= 3 && !landed; attempt++) {
           const txs = await tradeLocalBundle(bodies);
           txs[0].sign([mintKp, creator]);
-          txs[1].sign([solMaker]);
+          if (op && solLock) txs[1].sign([solLock]);
+          txs[last].sign([solMaker]);
           const createSig = signatureOf(txs[0]);
           const bundleId = await sendBundle(ctx.cfg.launch.jitoBlockEngine, txs);
           log(`bundle ${attempt}: ${bundleId} create ${createSig}`);
@@ -181,8 +217,9 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
           if (!landed && (await coinExists(ctx.conn, MINT)).onChain) landed = true;
           if (landed) {
             L.txs.pumpCreate = createSig;
-            L.txs.pumpBuy = signatureOf(txs[1]);
-            step(rec, "pump_bundle", now(), { bundleId, attempt, create: createSig, buy: L.txs.pumpBuy, devBuySol: devBuy });
+            L.txs.pumpBuy = signatureOf(txs[last]);
+            if (op && solLock) L.txs.pumpLockBuy = signatureOf(txs[1]);
+            step(rec, "pump_bundle", now(), { bundleId, attempt, create: createSig, lockBuy: L.txs.pumpLockBuy ?? null, buy: L.txs.pumpBuy, devBuySol: devBuy, lockSol: op?.lock.buySol ?? 0 });
           }
         }
         if (!landed) {
@@ -194,6 +231,19 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         }
       }
       L.pumpMint = MINT.toBase58();
+      save();
+    }
+    // Bundle fell back to sequence (or a retry): the lock wallet buys before the maker so the shape stays lock-first.
+    if (op && solLock && !L.txs.pumpLockBuy) {
+      const held = await solanaBalances(ctx.conn, solLock.publicKey, MINT);
+      if (held.tokens < 1) {
+        const o = { slippagePct: ctx.cfg.solana.slippagePct, priorityFeeSol: ctx.cfg.solana.priorityFeeSol };
+        const spend = Math.min(op.lock.buySol, affordableBuySol(held.sol));
+        if (spend <= 0) throw new Error(`lock wallet holds ${held.sol.toFixed(4)} SOL, not enough for the lock buy`);
+        if (spend < op.lock.buySol) log(`lock buy trimmed to ${spend} SOL (lock wallet holds ${held.sol.toFixed(4)})`);
+        L.txs.pumpLockBuy = await solanaBuy(ctx.conn, solLock, MINT, spend, o);
+        step(rec, "pump_lock_buy", now(), { sol: spend, quoted: op.lock.buySol, tx: L.txs.pumpLockBuy });
+      } else L.txs.pumpLockBuy = "held";
       save();
     }
     // The opening buy is separate from the create in the split flow; make sure the maker actually holds tokens.
@@ -222,7 +272,7 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
         {
           name: T.name, symbol: T.symbol, logo: `ipfs://${T.imageCid}`, description: T.description,
           twitter: T.twitter, telegram: T.telegram, website: T.website,
-          creatorFeeRecipient: maker, creatorTaxBps: ctx.cfg.evm.creatorTaxBps, salt: L.salt as Hex, exemptions: [launcher, maker],
+          creatorFeeRecipient: maker, creatorTaxBps: ctx.cfg.evm.creatorTaxBps, salt: L.salt as Hex, exemptions: evmLock ? [launcher, maker, evmLock] : [launcher, maker],
         },
         pf.expectedEconomics,
       );
@@ -255,13 +305,11 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     }
     log(`pons token ${L.ponsToken}`);
 
-    // ---- maker buy on Pons sized to land at the pump.fun fdv
-    if (!L.txs.evmMakerBuy) {
-      // Same RPC lag as above: a replica may not see the launch for a while. Poll until it does.
-      let c: Awaited<ReturnType<typeof readCurve>> | null = null;
-      for (let attempt = 1; !c; attempt++) {
+    // Same RPC lag as above: a replica may not see the launch for a while. Poll until it does.
+    const readCurveRetry = async () => {
+      for (let attempt = 1; ; attempt++) {
         try {
-          c = await readCurve(ctx.pub, L.ponsToken as Address);
+          return await readCurve(ctx.pub, L.ponsToken as Address);
         } catch (e) {
           const msg = (e as Error).message.split("\n")[0];
           if (attempt >= 60) throw new Error(`readCurve failed after ${attempt} attempts: ${msg}`);
@@ -269,11 +317,38 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
           await new Promise((r) => setTimeout(r, 3000));
         }
       }
+    };
+
+    // ---- operator lock buy on Pons: exactly lockPct of supply from the lock wallet, before the maker's buy
+    if (op && evmLockW && evmLock && !L.txs.evmLockBuy) {
+      const held = await evmBalances(ctx.pub, evmLock, L.ponsToken as Address);
+      if (held.tokens < 1) {
+        const c = await readCurveRetry();
+        const want = (BigInt(Math.round(op.lockPct * 100)) * 10n ** 27n) / 10_000n; // lockPct of 1e9 tokens, 18 decimals
+        const q = await quoteBuyForTokens(ctx.pub, c.curve, want, evmLock);
+        const gross = Number(q.quoteIn) / 1e18;
+        const spend = Math.min(gross, Math.max(0, held.eth - 0.0005));
+        if (spend <= 0) throw new Error(`lock wallet holds ${held.eth.toFixed(5)} ETH, not enough for the lock buy`);
+        if (spend < gross) log(`Pons lock buy trimmed to ${spend} ETH (lock wallet holds ${held.eth.toFixed(5)}, wanted ${gross.toFixed(5)})`);
+        L.txs.evmLockBuy = await evmBuy(ctx.pub, evmLockW, L.ponsToken as Address, Math.ceil(spend * 1e9) / 1e9, ctx.cfg.solana.slippagePct);
+        step(rec, "pons_lock_buy", now(), { pct: op.lockPct, eth: spend, quotedEth: gross, snipeBps: Number(q.snipeBps), tx: L.txs.evmLockBuy });
+      } else L.txs.evmLockBuy = "held";
+      save();
+    }
+
+    // ---- maker buy on Pons sized to land at the pump.fun fdv (operator launches: the amount the operator chose)
+    if (!L.txs.evmMakerBuy) {
+      const c = await readCurveRetry();
       const Q = Number(c.quoteReserve) / 1e18, Tk = Number(c.tokenReserve) / 1e18;
       const net = quoteNetForFdv(Q, Tk, TOKEN_SUPPLY, targetUsd / fx.ETH);
       const wanted = grossFromNet(net, Number(c.feeBps), c.creatorTaxBps);
-      const eth = ponsOpeningEth(wanted, rec.front.eth, ctx.cfg.launch.evmMakerCash, ctx.cfg.launch.seedPons);
-      step(rec, "pons_sizing", now(), { targetUsd: Math.round(targetUsd), wantedEth: wanted, eth, seeded: ctx.cfg.launch.seedPons });
+      let eth: number;
+      if (rec.operator) {
+        const held = await evmBalances(ctx.pub, maker, L.ponsToken as Address);
+        eth = Math.max(0, Math.min(rec.operator.ponsEth, round6(held.eth - ctx.cfg.launch.evmMakerCash - rec.operator.cashEth)));
+        if (eth < rec.operator.ponsEth) log(`Pons opening buy trimmed to ${eth} ETH (maker holds ${held.eth.toFixed(5)})`);
+      } else eth = ponsOpeningEth(wanted, rec.front.eth, ctx.cfg.launch.evmMakerCash, ctx.cfg.launch.seedPons);
+      step(rec, "pons_sizing", now(), { targetUsd: Math.round(targetUsd), wantedEth: wanted, eth, seeded: ctx.cfg.launch.seedPons, operator: !!rec.operator });
       L.txs.evmMakerBuy = eth > 0 ? await evmBuy(ctx.pub, makerW, L.ponsToken as Address, eth, ctx.cfg.solana.slippagePct) : "skipped";
       save();
     }
@@ -284,6 +359,14 @@ export async function runLaunch(ctx: LaunchCtx, rec: LaunchRecord): Promise<void
     step(rec, "launched", now(), { pumpMint: L.pumpMint, ponsToken: L.ponsToken, pilePump: rec.seed.pumpTokens, pilePons: rec.seed.ponsTokens });
     // Stamped here, not at the pump.fun create: a retried launch must not inherit an exit timer that already ran out.
     L.launchedAt = now();
+    if (op && solLock && evmLock) {
+      const [ls, le] = await Promise.all([solanaBalances(ctx.conn, solLock.publicKey, MINT), evmBalances(ctx.pub, evmLock, L.ponsToken as Address)]);
+      op.locked.pumpTokens = Math.round(ls.tokens);
+      op.locked.ponsTokens = Math.round(le.tokens);
+      // The operator's own coin: no exit timer, it stays until closed by hand.
+      rec.retire = { ...newRetire(L.launchedAt, ctx.cfg.retire), keep: true };
+      step(rec, "exit_keep", now(), { pumpTokens: op.locked.pumpTokens, ponsTokens: op.locked.ponsTokens, lockPct: op.lockPct });
+    }
     transition(rec, "live", now(), { coinId: rec.id });
     save();
     log("live");
