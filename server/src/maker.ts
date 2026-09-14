@@ -1,0 +1,143 @@
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { getAddress, type Address, type PublicClient, type WalletClient } from "viem";
+import type { Config } from "./config.js";
+import type { CoinState } from "./coin.js";
+import { escrowAbi, PONS } from "./evm/pons.js";
+import { evmBalances, evmBuy, evmSell, solanaBalances, solanaBuy, solanaSell } from "./trade.js";
+
+/**
+ * The TWINE-style peg: whenever the two FDVs drift apart by more than `band`,
+ * sell a clip on the expensive side and buy a clip on the cheap side.
+ * It is a peg, not arbitrage — inventory never crosses chains; only the maker's
+ * own quote and token balances on each side move.
+ *
+ * Safety: balance floors, one clip per side per tick, halts after N consecutive errors.
+ */
+export class Maker {
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private cfg: Config,
+    private coin: CoinState,
+    private conn: Connection,
+    private solWallet: Keypair,
+    private pub: PublicClient,
+    private evmWallet: WalletClient,
+  ) {}
+
+  start() {
+    if (this.timer) return;
+    this.coin.maker.enabled = true;
+    this.coin.maker.running = true;
+    const loop = async () => {
+      try {
+        await this.tick();
+      } catch (e) {
+        this.onError(`tick: ${(e as Error).message}`);
+      }
+      if (!this.coin.maker.halted) this.timer = setTimeout(loop, this.cfg.maker.intervalMs);
+      else this.coin.maker.running = false;
+    };
+    void loop();
+  }
+
+  stop() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.coin.maker.running = false;
+  }
+
+  resume() {
+    this.coin.maker.halted = false;
+    this.coin.maker.haltReason = null;
+    this.coin.maker.consecutiveErrors = 0;
+    this.start();
+  }
+
+  private onError(msg: string) {
+    this.coin.maker.consecutiveErrors++;
+    console.error(`[maker ${this.coin.id}] ${msg}`);
+    if (this.coin.maker.consecutiveErrors >= this.cfg.maker.maxErrors) {
+      this.coin.maker.halted = true;
+      this.coin.maker.haltReason = msg;
+      console.error(`[maker ${this.coin.id}] HALTED after ${this.coin.maker.consecutiveErrors} errors`);
+    }
+  }
+
+  async refreshInventory() {
+    const l = this.coin.pair;
+    const mint = new PublicKey(l.pumpMint);
+    const token = getAddress(l.ponsToken) as Address;
+    const [s, e, escrow] = await Promise.all([
+      solanaBalances(this.conn, this.solWallet.publicKey, mint),
+      evmBalances(this.pub, this.evmWallet.account!.address, token),
+      this.pub
+        .readContract({ address: PONS.feeEscrow, abi: escrowAbi, functionName: "balanceOf", args: [this.evmWallet.account!.address] })
+        .catch(() => 0n),
+    ]);
+    this.coin.inventory = { at: Date.now(), solana: s, evm: { ...e, escrowEth: Number(escrow) / 1e18 } };
+    return this.coin.inventory;
+  }
+
+  async tick() {
+    const st = this.coin;
+    st.maker.ticks++;
+    st.maker.lastTick = Date.now();
+    if (!st.pump || !st.pons) return;
+    const g = st.gap();
+    if (!g) return;
+    const inv = await this.refreshInventory();
+    if (g.gap <= this.cfg.maker.band) {
+      st.maker.consecutiveErrors = 0;
+      return;
+    }
+    // Clip scales with how far outside the band we are, capped at 3× the base clip.
+    const scale = Math.min(3, g.gap / this.cfg.maker.band);
+    const clipUsd = this.cfg.maker.maxClipUsd * scale;
+    const mint = new PublicKey(st.pair.pumpMint);
+    const token = getAddress(st.pair.ponsToken) as Address;
+    const o = { slippagePct: this.cfg.solana.slippagePct, priorityFeeSol: this.cfg.solana.priorityFeeSol };
+    const reason = `gap ${(g.gap * 100).toFixed(2)}% > band ${(this.cfg.maker.band * 100).toFixed(1)}%, ${g.expensive} expensive`;
+
+    const cheap = g.expensive === "pump" ? "pons" : "pump";
+    // 1) sell on the expensive side
+    if (g.expensive === "pump") {
+      const tokens = clipUsd / st.pump.price;
+      if (inv.solana.tokens >= tokens) await this.run("pump", "sell", `${tokens.toFixed(0)} tokens`, reason, () => solanaSell(this.conn, this.solWallet, mint, tokens, o));
+      else this.skip("pump", "sell", reason, `inventory ${inv.solana.tokens.toFixed(0)} < ${tokens.toFixed(0)}`);
+    } else {
+      const tokens = clipUsd / st.pons.price;
+      if (inv.evm.tokens >= tokens) await this.run("pons", "sell", `${tokens.toFixed(0)} tokens`, reason, () => evmSell(this.pub, this.evmWallet, token, tokens, this.cfg.solana.slippagePct));
+      else this.skip("pons", "sell", reason, `inventory ${inv.evm.tokens.toFixed(0)} < ${tokens.toFixed(0)}`);
+    }
+    // 2) buy on the cheap side
+    if (cheap === "pump") {
+      const sol = clipUsd / st.fx.SOL;
+      if (inv.solana.sol - sol >= this.cfg.maker.minSol) await this.run("pump", "buy", `${sol.toFixed(4)} SOL`, reason, () => solanaBuy(this.conn, this.solWallet, mint, sol, o));
+      else this.skip("pump", "buy", reason, `SOL floor ${this.cfg.maker.minSol}`);
+    } else {
+      const eth = clipUsd / st.fx.ETH;
+      if (inv.evm.eth - eth >= this.cfg.maker.minEth) await this.run("pons", "buy", `${eth.toFixed(5)} ETH`, reason, () => evmBuy(this.pub, this.evmWallet, token, eth, this.cfg.solana.slippagePct));
+      else this.skip("pons", "buy", reason, `ETH floor ${this.cfg.maker.minEth}`);
+    }
+    st.persist();
+  }
+
+  private skip(side: "pump" | "pons", action: "buy" | "sell", reason: string, why: string) {
+    this.coin.trades.push({ t: Date.now(), side, action, amount: "-", reason, error: `skipped: ${why}` });
+  }
+
+  private async run(side: "pump" | "pons", action: "buy" | "sell", amount: string, reason: string, fn: () => Promise<string>) {
+    try {
+      const tx = await fn();
+      this.coin.trades.push({ t: Date.now(), side, action, amount, reason, tx });
+      this.coin.maker.trades++;
+      this.coin.maker.consecutiveErrors = 0;
+      console.log(`[maker ${this.coin.id}] ${side} ${action} ${amount} -> ${tx}`);
+    } catch (e) {
+      const msg = (e as Error).message.split("\n")[0].slice(0, 200);
+      this.coin.trades.push({ t: Date.now(), side, action, amount, reason, error: msg });
+      this.onError(`${side} ${action} ${amount}: ${msg}`);
+    }
+  }
+}
