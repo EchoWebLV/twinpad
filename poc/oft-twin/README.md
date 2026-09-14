@@ -88,7 +88,7 @@ cd poc/oft-twin/lz && pnpm hardhat lz:oapp:wire --oapp-config layerzero.config.t
 ```
 7. Bridge LSTP from Solana to Robinhood (amount in whole tokens, below your balance from the dev buy; fee quoted first):
 ```bash
-cd poc/oft-twin/lz && pnpm hardhat lz:oft:send --src-eid 30168 --dst-eid 30416 --amount 100000 --to 0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3
+cd poc/oft-twin/lz && pnpm hardhat lz:oft:send --src-eid 30168 --dst-eid 30416 --amount 100000 --to 0x3F0b2De9ABbC1eB7a787018C18B95548b5DC7aa3 --token-program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
 ```
    Follow the message on https://layerzeroscan.com. When it lands, `LockstepOFT.totalSupply()` equals the escrowed amount.
 8. Seed the Uniswap v4 pool at the live pump.fun price (dry run first; it prints the LSTP it needs):
