@@ -88,6 +88,8 @@ export interface LaunchRecord {
     /** ETH the pool sent the maker after launch because Pons demand drained it (≤ MAX_TOPUP_ETH_PER_COIN). */
     topupEth: number;
     topupSol: number;
+    /** Creator fees claimed while live: pump.fun creator vault (SOL) and the Pons creator tax escrow (ETH). */
+    feesSol: number; feesEth: number;
     /** When repaid ≥ fronted on both chains: the front is retired, what is left in the coin is profit. */
     retiredAt: number | null;
   };
@@ -134,7 +136,7 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     approval: { status: "pending", at: null, note: null, auto: false },
     front: {
       sol: round6(i.quote.frontSol + i.quote.boostSol), eth: i.quote.frontEth, at: null, txSol: null, txRhLauncher: null, txRhMaker: null,
-      repaidSol: 0, repaidEth: 0, writtenOffSol: 0, topupEth: 0, topupSol: 0, retiredAt: null,
+      repaidSol: 0, repaidEth: 0, writtenOffSol: 0, topupEth: 0, topupSol: 0, feesSol: 0, feesEth: 0, retiredAt: null,
     },
     seed: null,
     launch: { startedAt: null, steps: [{ at: i.now, name: "created" }], salt: null, pumpMint: null, ponsToken: null, ponsCurve: null, launchedAt: null, txs: {}, error: null, retries: 0 },
@@ -195,7 +197,7 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
     q.depositEth ??= 0;
   }
   const f = raw.front as Record<string, unknown> | undefined;
-  if (f) { f.repaidEth ??= 0; f.topupEth ??= 0; f.topupSol ??= 0; f.retiredAt ??= null; }
+  if (f) { f.repaidEth ??= 0; f.topupEth ??= 0; f.topupSol ??= 0; f.feesSol ??= 0; f.feesEth ??= 0; f.retiredAt ??= null; }
   raw.boostSol ??= 0;
   const q = raw.quote as Record<string, unknown> | undefined;
   if (q) { q.boostSol ??= 0; q.parityDevBuySol ??= 0; }

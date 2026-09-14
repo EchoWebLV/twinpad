@@ -224,15 +224,21 @@ export async function coinExists(conn: Connection, mint: PublicKey) {
   return { onChain: sigs.length > 0, apiStatus, api };
 }
 
+/** SOL waiting in a creator's pump.fun vault (creator-fee share of trades on their coins), net of the vault's rent. */
+export async function creatorVaultBalance(conn: Connection, creator: PublicKey): Promise<number> {
+  const [bal, rentExempt] = await Promise.all([conn.getBalance(pda.pumpCreatorVault(creator), "confirmed"), conn.getMinimumBalanceForRentExemption(0)]);
+  return Math.max(0, bal - rentExempt) / 1e9;
+}
+
 /**
  * pump.fun `collect_creator_fee`: moves the creator vault (creator-fee share of every trade on our coins) to the creator wallet.
  * Simulated first; returns null when the vault is empty or the simulation fails, so a close never stops on it.
  */
-export async function collectCreatorFee(conn: Connection, creator: Keypair): Promise<{ sig: string; sol: number } | null> {
+export async function collectCreatorFee(conn: Connection, creator: Keypair, minSol = 0): Promise<{ sig: string; sol: number } | null> {
   const vault = pda.pumpCreatorVault(creator.publicKey);
   const bal = await conn.getBalance(vault, "confirmed");
   const rentExempt = await conn.getMinimumBalanceForRentExemption(0);
-  if (bal <= rentExempt) return null;
+  if (bal <= rentExempt || (bal - rentExempt) / 1e9 < minSol) return null;
   const disc = createHash("sha256").update("global:collect_creator_fee").digest().subarray(0, 8);
   const ix = new TransactionInstruction({
     programId: PUMP_PROGRAM,

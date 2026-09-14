@@ -92,6 +92,9 @@ export const config = {
     topupEth: num("TOPUP_ETH", 0.02),
     maxTopupEthPerCoin: num("MAX_TOPUP_ETH_PER_COIN", 0.2),
     topupSol: num("TOPUP_SOL", 0.5),
+    /** Creator fees are claimed while live once at least this much is waiting (pump.fun creator vault / Pons escrow). */
+    claimMinSol: num("CLAIM_MIN_SOL", 0.01),
+    claimMinEth: num("CLAIM_MIN_ETH", 0.002),
     maxTopupSolPerCoin: num("MAX_TOPUP_SOL_PER_COIN", 3),
   },
   /** Loss budgets in USD (fronted value − current inventory value). Coin: halt that maker. Pool: halt every maker and stop approving. */

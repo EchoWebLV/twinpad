@@ -28,6 +28,8 @@ export class Maker {
     private pub: PublicClient,
     private evmWallet: WalletClient,
     private recovery?: Recovery,
+    /** The pump.fun creator (collects creator fees); the maker wallet itself until the maker is rotated off it. */
+    private solCreator: Keypair = solWallet,
   ) {}
 
   start() {
@@ -221,7 +223,7 @@ export class Maker {
     if (!this.recovery) return;
     try {
       const fresh = this.coin.maker.trades !== tradesBefore ? await this.refreshInventory() : inv;
-      await this.recovery.afterTick(this.coin, fresh, { sol: this.solWallet, evm: this.evmWallet });
+      await this.recovery.afterTick(this.coin, fresh, { sol: this.solWallet, solCreator: this.solCreator, evm: this.evmWallet });
     } catch (e) {
       console.error(`[recover ${this.coin.id}] ${(e as Error).message.split("\n")[0].slice(0, 200)}`);
     }
