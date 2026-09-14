@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getJson, img, pct, usd, type CoinSummary, type Launch, type Quote } from "../lib/api";
-import { Band, Img, Mark, Nav, PONS, PUMP, Sh, Status, Ticker, ago } from "./components/ui";
+import { Band, Cat3D, Img, Mark, Nav, PONS, PUMP, Sh, Status, Ticker, ago } from "./components/ui";
 
 const OPEN = ["awaiting_deposit", "paid", "approved", "launching"];
 
@@ -57,7 +57,9 @@ export default function Home() {
             <a className="lnk" href="#how">How it works</a>
           </div>
         </div>
-        <div className="box on r" style={{ "--i": 2, padding: 0 } as React.CSSProperties}>
+        <div className="hero-side">
+          <Cat3D />
+          <div className="box on r" style={{ "--i": 2, padding: 0 } as React.CSSProperties}>
           <span className="cap">Live quote</span>
           {q ? (
             <div className="quote">
@@ -69,6 +71,7 @@ export default function Home() {
           ) : (
             <p className="mute" style={{ padding: 22 }}>{err ? `API unreachable: ${err}` : <><i className="ld" />loading quote</>}</p>
           )}
+          </div>
         </div>
       </section>
 

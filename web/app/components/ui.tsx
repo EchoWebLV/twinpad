@@ -1,11 +1,75 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getJson } from "../../lib/api";
 
 /** Twinpad mark: the cat, half yellow half black — one coin, two chains. */
 export function Mark({ size = 30 }: { size?: number }) {
   return <img className="mark" src="/logo.png" width={size} height={size} alt="" />;
+}
+
+/**
+ * Hero cat: the logo extruded into depth (stacked layers on the z axis), tilting toward the pointer with a slow idle turn.
+ * Pure CSS 3D on the one PNG — no model, no WebGL.
+ */
+const CAT_LAYERS = 22;
+export function Cat3D() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let raf = 0;
+    let tx = 0, ty = 0, cx = 0, cy = 0;
+    const settle = () => {
+      cx += (tx - cx) * 0.08;
+      cy += (ty - cy) * 0.08;
+      el.style.setProperty("--ry", `${cx.toFixed(2)}deg`);
+      el.style.setProperty("--rx", `${cy.toFixed(2)}deg`);
+      raf = Math.abs(tx - cx) + Math.abs(ty - cy) > 0.05 ? requestAnimationFrame(settle) : 0;
+    };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(settle); };
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - (r.left + r.width / 2)) / Math.max(r.width, 1);
+      const y = (e.clientY - (r.top + r.height / 2)) / Math.max(r.height, 1);
+      tx = Math.max(-1.2, Math.min(1.2, x)) * 38;
+      ty = Math.max(-1.2, Math.min(1.2, -y)) * 26;
+      kick();
+    };
+    const leave = () => { tx = 0; ty = 0; kick(); };
+    window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("pointerleave", leave);
+    document.addEventListener("mouseleave", leave);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerleave", leave);
+      document.removeEventListener("mouseleave", leave);
+    };
+  }, []);
+  return (
+    <div className="cat3d" ref={ref} aria-hidden="true">
+      <div className="glow" />
+      <div className="tilt">
+        <div className="stack">
+          {Array.from({ length: CAT_LAYERS }, (_, i) => {
+            const back = CAT_LAYERS - 1 - i; // 0 = front face
+            const shade = back === 0 ? 1 : Math.max(0.12, 0.55 - back * 0.02);
+            return (
+              <img
+                key={i}
+                src="/logo.png"
+                alt=""
+                draggable={false}
+                style={{ transform: `translateZ(${-back * 3}px)`, filter: back === 0 ? "none" : `brightness(${shade}) saturate(1.4)` }}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <div className="floor" />
+    </div>
+  );
 }
 
 export function Nav() {
