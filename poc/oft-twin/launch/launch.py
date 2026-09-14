@@ -24,6 +24,8 @@ from pathlib import Path
 import requests
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
+from solders.hash import Hash
+from solders.message import MessageV0
 from solders.transaction import VersionedTransaction
 
 HERE = Path(__file__).resolve().parent
@@ -178,9 +180,33 @@ def build_local_tx(creator: Pubkey, mint: Pubkey, uri: str, dev_buy_sol: float, 
     return r.content
 
 
-def send_and_confirm(rpc_url: str, signed: VersionedTransaction) -> str:
-    sig = rpc(rpc_url, "sendTransaction", [base64.b64encode(bytes(signed)).decode(),
-                                           {"encoding": "base64", "skipPreflight": False, "maxRetries": 3}])
+def with_fresh_blockhash(rpc_url: str, tx: VersionedTransaction) -> VersionedTransaction:
+    """PumpPortal builds the tx with a blockhash from its own node. A lagging RPC node may not know it yet
+    (BlockhashNotFound at preflight), so stamp a blockhash fetched from the RPC we actually send through."""
+    bh = rpc(rpc_url, "getLatestBlockhash", [{"commitment": "confirmed"}])["value"]["blockhash"]
+    m = tx.message
+    if not isinstance(m, MessageV0):
+        raise RuntimeError(f"unexpected message type {type(m).__name__}")
+    msg = MessageV0(m.header, m.account_keys, Hash.from_string(bh), m.instructions, m.address_table_lookups)
+    return VersionedTransaction.populate(msg, tx.signatures)
+
+
+def send_and_confirm(rpc_url: str, unsigned: VersionedTransaction, signers: list[Keypair]) -> str:
+    sig = None
+    for attempt in range(3):
+        fresh = with_fresh_blockhash(rpc_url, unsigned)
+        signed = VersionedTransaction(fresh.message, signers)
+        try:
+            sig = rpc(rpc_url, "sendTransaction", [base64.b64encode(bytes(signed)).decode(),
+                                                   {"encoding": "base64", "skipPreflight": False, "maxRetries": 3}])
+            break
+        except RuntimeError as e:
+            if "BlockhashNotFound" in str(e) and attempt < 2:
+                print(f"blockhash not known to the RPC yet, retrying with a new one ({attempt + 1}/3)")
+                time.sleep(2)
+                continue
+            raise
+    print(f"sent      {sig}")
     for _ in range(40):
         st = rpc(rpc_url, "getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
         v = (st or {}).get("value", [None])[0]
@@ -238,7 +264,14 @@ def main() -> None:
         print(f"creator   {creator.pubkey()}")
         try:
             lam = rpc(rpc_url, "getBalance", [str(creator.pubkey())])["value"]
-            print(f"balance   {lam / 1e9:.4f} SOL  (need dev buy {dev_buy} SOL + ~0.03 SOL fees/rent)")
+            need = dev_buy + 0.03
+            print(f"balance   {lam / 1e9:.4f} SOL  (need dev buy {dev_buy} SOL + ~0.03 SOL fees/rent = {need:.2f} SOL)")
+            if lam / 1e9 < need:
+                print(f"!! fund {creator.pubkey()} with at least {need:.2f} SOL before launching")
+                if a.confirm:
+                    sys.exit("refusing: creator wallet is underfunded")
+        except SystemExit:
+            raise
         except Exception as e:  # noqa: BLE001
             print(f"balance   unknown ({e})")
     try:
@@ -271,8 +304,7 @@ def main() -> None:
     if creator:
         raw = build_local_tx(creator.pubkey(), mint_kp.pubkey(), uri, dev_buy, slippage, prio)
         tx = VersionedTransaction.from_bytes(raw)
-        signed = VersionedTransaction(tx.message, [mint_kp, creator])
-        sig = send_and_confirm(rpc_url, signed)
+        sig = send_and_confirm(rpc_url, tx, [mint_kp, creator])
     else:
         body = {
             "action": "create",

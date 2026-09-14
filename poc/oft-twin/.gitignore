@@ -15,3 +15,4 @@ launch/out/
 uniswap/out/
 uniswap/cache/
 *.log
+__pycache__/
