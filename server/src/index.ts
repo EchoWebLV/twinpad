@@ -76,8 +76,15 @@ async function main() {
     const busy = registry.list({ status: ["live", "launching", "approved", "paid"] }).length;
     return { sol: b.sol - config.pool.minSol - reservedSol, eth: b.eth - config.pool.minEth - reservedEth - perLaunchEth, slots: Math.max(1, config.launch.maxLiveMakers - busy), balances: b };
   };
+  // Pons factory params (fee, curve config) move rarely and cost five contract reads; the quote is polled
+  // by every open home page, so memoize them like the balances. The launcher reads them fresh.
+  let preflightAt = 0, preflightMemo: Awaited<ReturnType<typeof launchPreflight>> | null = null;
+  const preflight = async () => {
+    if (!preflightMemo || Date.now() - preflightAt > 15_000) { preflightMemo = await launchPreflight(pub, PONS.ZERO); preflightAt = Date.now(); }
+    return preflightMemo;
+  };
   const quoteNow = async (boostSol = 0) => {
-    const [rates, pf] = await Promise.all([fx(), launchPreflight(pub, PONS.ZERO)]);
+    const [rates, pf] = await Promise.all([fx(), preflight()]);
     const pons = { phantomEth: Number(formatEther(pf.config.phantomQuote)), supply: Number(formatEther(pf.config.supply)), feeBps: Number(pf.config.curveFeeBps), creatorTaxBps: config.evm.creatorTaxBps };
     let front = { sol: config.launch.frontSol, eth: config.launch.frontEth };
     if (config.launch.autoSize) {
@@ -94,7 +101,7 @@ async function main() {
   /** True when the pool cannot front even the minimum right now (nothing is reserved for the caller). */
   const poolShort = async () => {
     if (!config.launch.autoSize) return false;
-    const pf = await launchPreflight(pub, PONS.ZERO);
+    const pf = await preflight();
     const free = await freeNow(Number(formatEther(pf.launchFee)));
     return free.sol < config.launch.frontSolMin || free.eth < config.launch.frontEthMin;
   };

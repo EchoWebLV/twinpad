@@ -12,21 +12,28 @@ export default function Home() {
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [q, setQ] = useState<Quote | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
+    // Coins and the queue are cheap reads; the quote touches both chains and a price feed. Fetch them apart so
+    // "Live now" renders as soon as it is known instead of waiting on the slowest request.
     const tick = async () => {
       try {
-        const [c, l, qq] = await Promise.all([getJson<CoinSummary[]>("/api/coins"), getJson<Launch[]>("/api/paid"), getJson<Quote>("/api/paid/quote")]);
+        const [c, l] = await Promise.all([getJson<CoinSummary[]>("/api/coins"), getJson<Launch[]>("/api/paid")]);
         setCoins(c);
         setLaunches(l);
-        setQ(qq);
         setErr(null);
       } catch (e) {
         setErr((e as Error).message);
+      } finally {
+        setLoaded(true);
       }
     };
+    const quoteTick = () => getJson<Quote>("/api/paid/quote").then(setQ).catch(() => {});
     void tick();
+    void quoteTick();
     const id = setInterval(tick, 10_000);
-    return () => clearInterval(id);
+    const qid = setInterval(quoteTick, 15_000);
+    return () => { clearInterval(id); clearInterval(qid); };
   }, []);
   const byId = new Map(coins.map((c) => [c.id, c]));
   const queue = launches.filter((l) => OPEN.includes(l.status));
@@ -83,8 +90,10 @@ export default function Home() {
       </div>
 
       <section className="section">
-        <Sh n="01" title="Live now" sub={`${coins.length} with an active maker`} />
-        {coins.length === 0 ? (
+        <Sh n="01" title="Live now" sub={loaded ? `${coins.length} with an active maker` : "loading"} />
+        {!loaded ? (
+          <div className="empty"><b>Loading…</b>Reading the live coins from the pad.</div>
+        ) : coins.length === 0 ? (
           <div className="empty"><b>No live coins yet</b>The first launch shows up here with both prices and the gap.</div>
         ) : (
           <div className="coins">

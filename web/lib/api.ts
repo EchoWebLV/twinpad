@@ -1,7 +1,8 @@
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787";
 
+/** Reads give up after 15 s so one stalled request cannot hold a page's whole refresh. */
 export async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(`${API}${path}`, { cache: "no-store" });
+  const r = await fetch(`${API}${path}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? r.statusText);
   return j as T;
