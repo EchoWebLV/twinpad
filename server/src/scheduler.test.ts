@@ -39,3 +39,11 @@ test("failed launches are re-queued after the backoff, up to autoRetries, never 
   f.launch.retries = 2;
   assert.deepEqual(plan([f], cfg, 1100), []);
 });
+
+test("nothing is approved, launched or retried while launches are closed", () => {
+  const f = mk("f", "launching", 0);
+  transition(f, "failed", 100);
+  const cfg = { autoApprove: true, maxLiveMakers: 5, autoRetries: 2, retryBackoffMs: 0, closed: true };
+  assert.deepEqual(plan([mk("a", "paid"), mk("b", "approved"), f], cfg, 1100), []);
+  assert.deepEqual(plan([mk("a", "paid")], { ...cfg, closed: false }), [{ type: "approve", id: "a" }, { type: "launch", id: "a" }]);
+});

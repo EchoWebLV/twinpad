@@ -15,8 +15,12 @@ export default function LaunchForm() {
   const [connected, setConnected] = useState<{ key: string; address: string } | null>(null);
   const wallets = useWallets();
   const [busy, setBusy] = useState(false);
+  const [closed, setClosed] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const boostSol = chain === "sol" && Number.isFinite(Number(boost)) && Number(boost) > 0 ? Number(boost) : 0;
+  useEffect(() => {
+    getJson<{ ok: boolean; launches?: string }>("/api/health").then((h) => setClosed(h.launches === "closed")).catch(() => {});
+  }, []);
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
@@ -77,6 +81,7 @@ export default function LaunchForm() {
       </div>
       <div className="two">
         <form className="box form r" style={{ "--i": 1 } as React.CSSProperties} onSubmit={submit}>
+          {closed && <p className="err" style={{ marginBottom: 14 }}>Launches are closed right now. The pad is not taking new coins; check back later.</p>}
           <span className="cap">01 · Token</span>
           <div className="grid2">
             <label>Name<input required maxLength={32} placeholder="Yellow Cat" value={f.name} onChange={set("name")} /></label>
@@ -128,7 +133,7 @@ export default function LaunchForm() {
           )}
           {err && <p className="err" style={{ marginBottom: 14 }}>{err}</p>}
           <div className="actions">
-            <button className="btn y" disabled={busy || !image}>{busy ? "Creating" : "Create launch"} <span className="ar">→</span></button>
+            <button className="btn y" disabled={busy || !image || closed}>{closed ? "Launches closed" : busy ? "Creating" : "Create launch"} <span className="ar">→</span></button>
             <span className="mute" style={{ fontSize: 13 }}>Next step: pay {q ? (chain === "sol" ? `${payTotal} SOL` : `${q.depositEth} ETH`) : "the deposit"} from the wallet above.</span>
           </div>
         </form>

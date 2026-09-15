@@ -129,9 +129,10 @@ async function main() {
   watcher.start();
   const scheduler = new Scheduler(registry, {
     autoApprove: config.launch.autoApprove, maxLiveMakers: config.launch.maxLiveMakers,
-    autoRetries: config.launch.autoRetries, retryBackoffMs: config.launch.retryBackoffMin * 60_000,
+    autoRetries: config.launch.autoRetries, retryBackoffMs: config.launch.retryBackoffMin * 60_000, closed: config.launch.launchesClosed,
   }, launch);
   scheduler.start();
+  if (scheduler.closed) console.error("[scheduler] LAUNCHES_CLOSED: refusing new launches and holding the queue");
 
   // ---- exit policy + close
   const closing = new Set<string>();
@@ -157,6 +158,7 @@ async function main() {
 
   // ---- api
   const router = new Router(config.launch.adminToken);
+  const CLOSED_MSG = "launches are closed right now";
   const limiter = new RateLimit(60_000);
   const rec = (id: string) => {
     const r = registry.get(id);
@@ -164,7 +166,7 @@ async function main() {
     return r;
   };
 
-  router.get("/api/health", () => ({ ok: true, coins: coins.size, updatedAt: Date.now() }));
+  router.get("/api/health", () => ({ ok: true, launches: scheduler.closed ? "closed" : "open", coins: coins.size, updatedAt: Date.now() }));
   router.get("/api/coins", () => [...coins.values()].map((c) => c.summary()));
   router.get("/api/coins/:id/state", (p, _b, h) => {
     const c = coins.get(p.id);
@@ -180,6 +182,7 @@ async function main() {
   });
   router.get("/api/paid/:id", (p) => publicRecord(rec(p.id)));
   router.post("/api/paid", async (_p, body, _h, ip) => {
+    if (scheduler.closed) throw new HttpError(503, CLOSED_MSG);
     if (!limiter.allow(ip)) throw new HttpError(429, "one launch per minute per address");
     if (registry.list({ status: OPEN_STATUSES }).length >= config.launch.maxOpenLaunches) throw new HttpError(503, "launches are full right now");
     if (!config.pinataJwt) throw new HttpError(503, "PINATA_JWT not configured");
@@ -244,6 +247,7 @@ async function main() {
     return { shape, pool: { balances: b, free, ok: free.sol >= shape.pool.sol && free.eth >= shape.pool.eth, floors: { sol: config.pool.minSol, eth: config.pool.minEth } }, wallets, limits: BUNDLE_LIMITS, lockEthExtra: LOCK_ETH_EXTRA };
   }, { admin: true });
   router.post("/api/admin/launch", async (_p, body) => {
+    if (scheduler.closed) throw new HttpError(409, `${CLOSED_MSG} (LAUNCHES_CLOSED)`);
     if (scheduler.paused) throw new HttpError(409, "pool is paused (breaker); resume first");
     const { rec: r, shape } = await createOperatorLaunch({ registry, now: Date.now, publicUrl: config.server.publicUrl, pin: { file: (f, n) => pinFile(config.pinataJwt, f, n), json: (o, n) => pinJson(config.pinataJwt, o, n) }, shape: operatorShape, checkFunding }, body);
     console.log(`[operator] launch ${r.id} queued: lock ${shape.lock.pct}% bundle ${shape.pump.devBuySol} SOL / ${shape.pons.eth} ETH${shape.selfFunded ? ` self-funded, ${shape.buyers.count} buyers` : ""}`);
@@ -254,6 +258,7 @@ async function main() {
   router.post("/api/admin/paid/:id/approve", (p) => {
     const r = rec(p.id);
     if (r.status !== "paid") throw new HttpError(409, `status is ${r.status}`);
+    if (scheduler.closed) throw new HttpError(409, `${CLOSED_MSG} (LAUNCHES_CLOSED)`);
     approve(r, Date.now(), false);
     registry.save(r);
     void scheduler.tick();
@@ -271,6 +276,7 @@ async function main() {
   router.post("/api/admin/paid/:id/retry", (p) => {
     const r = rec(p.id);
     if (r.status !== "failed") throw new HttpError(409, `status is ${r.status}`);
+    if (scheduler.closed) throw new HttpError(409, `${CLOSED_MSG} (LAUNCHES_CLOSED)`);
     transition(r, "approved", Date.now());
     registry.save(r);
     void scheduler.tick();
@@ -367,7 +373,7 @@ async function main() {
     return { ok: true, paused: scheduler.paused };
   }, { admin: true });
   router.get("/api/admin/pool/status", () => ({
-    paused: scheduler.paused, closing: [...closing],
+    paused: scheduler.paused, closed: scheduler.closed, closing: [...closing],
     coins: [...coins.values()].map((c) => ({ id: c.id, lossUsd: c.maker.lossUsd, mode: c.maker.mode, front: c.front, repaid: c.repaid, retiredAt: c.retiredAt })),
   }), { admin: true });
 

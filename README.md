@@ -253,6 +253,8 @@ Both `server/` and `web/` have a `Dockerfile` and `railway.json`.
 - Admin routes are only as safe as `ADMIN_TOKEN`. Put the server behind HTTPS.
 - This is custodial: the operator's pool is at risk for every fronted launch. Keep
   `MAX_LIVE_MAKERS` and `MAX_OPEN_LAUNCHES` sized to the pool.
+- `LAUNCHES_CLOSED=true` is the off switch: the public form and the admin bundle refuse new
+  launches and the queue holds (no approvals, retries or launches). Live makers keep running.
 
 ## Scripts
 

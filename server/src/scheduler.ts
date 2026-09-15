@@ -8,6 +8,8 @@ export interface PlanConfig {
   autoRetries?: number; retryBackoffMs?: number;
   /** Circuit breaker: nothing is approved, retried or launched while paused. */
   paused?: boolean;
+  /** Operator switch (LAUNCHES_CLOSED): the same hold, but from config rather than the breaker, so resume does not lift it. */
+  closed?: boolean;
 }
 
 /** When a failed record failed (its last status step). */
@@ -19,7 +21,7 @@ export function failedAt(r: LaunchRecord): number {
 /** Pure: given all records, what to do now. Approves paid records (auto mode), re-queues failed launches, picks one launch. */
 export function plan(records: LaunchRecord[], cfg: PlanConfig, now = Date.now()): Action[] {
   const acts: Action[] = [];
-  if (cfg.paused) return acts;
+  if (cfg.paused || cfg.closed) return acts;
   for (const r of records.filter((r) => r.status === "failed")) {
     if (r.launch.retries < (cfg.autoRetries ?? 0) && now - failedAt(r) >= (cfg.retryBackoffMs ?? 0)) acts.push({ type: "retry", id: r.id });
   }
@@ -89,6 +91,10 @@ export class Scheduler {
 
   get paused() {
     return !!this.cfg.paused;
+  }
+
+  get closed() {
+    return !!this.cfg.closed;
   }
 
   async tick(now = Date.now()) {

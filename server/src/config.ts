@@ -67,6 +67,9 @@ export const config = {
      *  nothing to sell on Robinhood can only buy the cheap side with pool money whenever Robinhood runs ahead (the $TWINE bleed). */
     seedPons: bool("SEED_PONS", true),
     autoApprove: bool("AUTO_APPROVE", false),
+    /** The operator's off switch: true refuses every new launch (public form and admin bundle) and holds the queue —
+     *  nothing is approved, retried or launched until it is false again. Unlike the loss breaker it survives restarts. */
+    launchesClosed: bool("LAUNCHES_CLOSED", false),
     adminToken: env("ADMIN_TOKEN"),
     /** Comma-separated. Wallets that may not launch; name/symbol substrings that are reserved. Admin bans persist in DATA_DIR/bans.json. */
     bannedWallets: env("BANNED_WALLETS"),
