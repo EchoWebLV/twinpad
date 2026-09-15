@@ -38,6 +38,9 @@ poc/oft-twin/
   Rent-exempt minimum 2.74428204 SOL at exact size (`--max-len 540040`), 5.48768524 SOL with the default 2x headroom.
 - `uniswap`: pool initialized, full-range liquidity minted, quote read, 0.001 ETH bought through the
   UniversalRouter, all on an anvil fork of Robinhood mainnet with a mock token. `bash uniswap/test-fork.sh` repeats it.
+  `pnpm check` (in `uniswap/`) is the no-network math check: `isqrt` on 26,000 values and the one-sided range at the live
+  LSTP price. The float-seeded `isqrt` used to spin for hours at that price (step 8 dry run hang, 2026-09-15); the fork
+  test now runs the check first and replays the step 8 dry run at `--price-eth 0.0000000014964`.
 - `launch`: image rendered, metadata pinned to IPFS and read back, dry run passes. The mint is not on chain.
 
 Not yet exercised: a live LayerZero message. That needs the Solana program and adapter on mainnet (or devnet

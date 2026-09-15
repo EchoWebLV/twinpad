@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "seed": "tsx seed-pool.ts",
+    "check": "tsx check-math.ts",
     "test:fork": "bash test-fork.sh"
   },
   "dependencies": {

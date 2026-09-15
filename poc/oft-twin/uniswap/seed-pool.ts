@@ -98,9 +98,12 @@ export function sqrtPriceX96FromTokensPerEth(tokensPerEth: number): bigint {
   return isqrt(x)
 }
 export function isqrt(n: bigint): bigint {
+  // floor(sqrt(n)). Start from a power of two >= sqrt(n) so Newton descends monotonically and the first y >= x is the
+  // answer. (A float seed can land below the root; the old +1 walk from there spun for hours at some live prices.)
+  if (n < 0n) throw new Error('isqrt of a negative number')
   if (n < 2n) return n
-  let x = BigInt(Math.floor(Math.sqrt(Number(n)))) || 1n
-  for (;;) { const y = (x + n / x) >> 1n; if (y >= x) { if (x * x > n) x -= 1n; while ((x + 1n) * (x + 1n) <= n) x += 1n; return x } x = y }
+  let x = 1n << BigInt((n.toString(2).length >> 1) + 1)
+  for (;;) { const y = (x + n / x) >> 1n; if (y >= x) return x; x = y }
 }
 const J = (b: bigint) => JSBI.BigInt(b.toString())
 const B = (j: JSBI) => BigInt(j.toString())
@@ -312,4 +315,5 @@ async function main() {
   console.log(`dexscreener https://dexscreener.com/robinhood/${id}`)
 }
 
-main().catch((e) => { console.error(e); process.exit(1) })
+// run only when executed directly (tsx seed-pool.ts ...); check-math.ts imports the helpers without running this
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { console.error(e); process.exit(1) })

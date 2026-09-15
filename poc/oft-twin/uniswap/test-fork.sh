@@ -3,6 +3,8 @@
 # Uses anvil's well-known test account #0 (public key material, not a secret). Nothing touches mainnet.
 set -euo pipefail
 cd "$(dirname "$0")"
+echo "--- pure math first: isqrt + one-sided range at the live price (no network)"
+pnpm -s check
 FORK_URL=${FORK_URL:-https://rpc.mainnet.chain.robinhood.com}
 PORT=${PORT:-8545}
 KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80   # anvil account 0
@@ -19,6 +21,8 @@ CTOR=$(cast abi-encode "constructor(uint256)" 1000000000000000000000000000)
 TOKEN=$(cast send --rpc-url "http://127.0.0.1:$PORT" --private-key "$KEY" --json --create "${BYTECODE}${CTOR#0x}" | jq -r .contractAddress)
 echo "mock LSTP deployed at $TOKEN (1,000,000,000 * 1e18 to $ADDR)"
 export PRIVATE_KEY=$KEY
+echo "--- step 8 replica: one-sided dry run at the live LSTP price shape (1 LSTP = 1.4964e-9 ETH); the float-seeded isqrt spun for hours here"
+pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000000014964 --lstp 50000
 echo "--- dry run"
 pnpm -s seed -- --rpc "http://127.0.0.1:$PORT" --token "$TOKEN" --price-eth 0.0000001 --eth 0.05
 echo "--- confirm (initialize + mint full-range liquidity)"
