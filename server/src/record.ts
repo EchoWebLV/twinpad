@@ -214,6 +214,9 @@ export function step(rec: LaunchRecord, name: string, now: number, extra: Record
   rec.launch.steps.push({ at: now, name, ...extra });
 }
 
+/** Banned launches stay in the registry (refunds, audit trail) but leave every public list. */
+export const isBanned = (rec: LaunchRecord) => rec.launch.steps.some((s) => s.name === "banned");
+
 /** What the API serves: the record as stored (it holds public keys only). Exists so the boundary is explicit. */
 export function publicRecord(rec: LaunchRecord): LaunchRecord {
   return rec;

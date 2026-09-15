@@ -20,7 +20,7 @@ import { CoinState } from "./coin.js";
 import { Poller } from "./poller.js";
 import { Makers } from "./makers.js";
 import { Router, RateLimit, HttpError, serve, query } from "./api.js";
-import { OPEN_STATUSES, newRetire, step, transition, publicRecord, type LaunchRecord } from "./record.js";
+import { OPEN_STATUSES, newRetire, step, transition, publicRecord, isBanned, type LaunchRecord } from "./record.js";
 import { closeCoin, Retirer } from "./retire.js";
 import { rotateSolMaker } from "./rotate.js";
 import { alert } from "./alerts.js";
@@ -174,7 +174,7 @@ async function main() {
     const r = query(h).range;
     return c.snapshot(r === "1h" || r === "6h" ? r : "24h");
   });
-  router.get("/api/paid", () => registry.list().map(publicRecord));
+  router.get("/api/paid", () => registry.list().filter((r) => !isBanned(r)).map(publicRecord));
   router.get("/api/paid/quote", (_p, _b, h) => {
     const boost = Number(query(h).boost ?? 0);
     if (!Number.isFinite(boost) || boost < 0 || boost > config.launch.maxBoostSol) throw new HttpError(400, `boost must be 0..${config.launch.maxBoostSol} SOL`);
