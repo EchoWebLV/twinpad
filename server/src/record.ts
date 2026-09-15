@@ -65,6 +65,8 @@ export interface LaunchRecord {
   id: string;
   createdAt: number;
   status: LaunchStatus;
+  /** Operator switch: keep this launch and its coin out of every public list. Admin routes still see it. */
+  hidden: boolean;
   token: TokenMeta;
   devWallet: string;
   /** Deployer boost (SOL) added to the dev buy; refunded pro-rata from what the close recovers. */
@@ -161,6 +163,7 @@ export function newRecord(i: NewRecordInput): LaunchRecord {
     id: i.id,
     createdAt: i.now,
     status: "awaiting_deposit",
+    hidden: false,
     token: i.token,
     devWallet: i.devWallet,
     boostSol: i.quote.boostSol,
@@ -247,6 +250,7 @@ export function migrateRecord(raw: Record<string, unknown>): LaunchRecord {
   if (q) { q.boostSol ??= 0; q.parityDevBuySol ??= 0; }
   const l = raw.launch as Record<string, unknown> | undefined;
   if (l) l.retries ??= 0;
+  raw.hidden ??= false;
   raw.retire ??= null;
   raw.operator ??= null;
   const op = raw.operator as Record<string, unknown> | null;

@@ -19,7 +19,7 @@ import { runLaunch } from "./launcher.js";
 import { CoinState } from "./coin.js";
 import { Poller } from "./poller.js";
 import { Makers } from "./makers.js";
-import { Router, RateLimit, HttpError, serve, query } from "./api.js";
+import { Router, RateLimit, HttpError, serve, query, type Headers as ApiHeaders } from "./api.js";
 import { OPEN_STATUSES, newRetire, step, transition, publicRecord, isBanned, type LaunchRecord } from "./record.js";
 import { closeCoin, Retirer } from "./retire.js";
 import { rotateSolMaker } from "./rotate.js";
@@ -167,14 +167,16 @@ async function main() {
   };
 
   router.get("/api/health", () => ({ ok: true, launches: scheduler.closed ? "closed" : "open", coins: coins.size, updatedAt: Date.now() }));
-  router.get("/api/coins", () => [...coins.values()].map((c) => c.summary()));
+  /** Hidden launches drop out of the public lists, but the admin page reads the same two routes, so a valid token sees everything. */
+  const isAdmin = (h: ApiHeaders) => !!config.launch.adminToken && h["x-admin-token"] === config.launch.adminToken;
+  router.get("/api/coins", (_p, _b, h) => [...coins.values()].filter((c) => isAdmin(h) || !registry.get(c.id)?.hidden).map((c) => c.summary()));
   router.get("/api/coins/:id/state", (p, _b, h) => {
     const c = coins.get(p.id);
     if (!c) throw new HttpError(404, "no such coin");
     const r = query(h).range;
     return c.snapshot(r === "1h" || r === "6h" ? r : "24h");
   });
-  router.get("/api/paid", () => registry.list().filter((r) => !isBanned(r)).map(publicRecord));
+  router.get("/api/paid", (_p, _b, h) => registry.list().filter((r) => !isBanned(r) && (isAdmin(h) || !r.hidden)).map(publicRecord));
   router.get("/api/paid/quote", (_p, _b, h) => {
     const boost = Number(query(h).boost ?? 0);
     if (!Number.isFinite(boost) || boost < 0 || boost > config.launch.maxBoostSol) throw new HttpError(400, `boost must be 0..${config.launch.maxBoostSol} SOL`);
@@ -376,6 +378,19 @@ async function main() {
    * Consolidate every per-coin EVM wallet into the pool wallet. Dry run by default: POST {"confirm":true} moves ETH.
    * A live coin's maker and launcher are skipped unless {"includeLive":true} — sweeping them leaves the maker without gas.
    */
+  /** Hide or unhide launches in the public lists. POST {"hidden":true} with :id "all" for every record. */
+  router.post("/api/admin/paid/:id/hidden", (p, body) => {
+    const hidden = (body as { hidden?: unknown })?.hidden !== false;
+    const targets = p.id === "all" ? registry.list() : [rec(p.id)];
+    for (const r of targets) {
+      if (r.hidden === hidden) continue;
+      r.hidden = hidden;
+      step(r, hidden ? "hidden" : "unhidden", Date.now());
+      registry.save(r);
+    }
+    return { hidden, ids: targets.map((r) => r.id) };
+  }, { admin: true });
+
   router.post("/api/admin/pool/sweep-eth", async (_p, body) => {
     const b = (body ?? {}) as { confirm?: unknown; includeLive?: unknown };
     const confirm = b.confirm === true;
