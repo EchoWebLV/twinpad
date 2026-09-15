@@ -2,7 +2,7 @@ import path from "node:path";
 import { formatEther } from "viem";
 import { config, redactedConfig } from "./config.js";
 import { Registry } from "./registry.js";
-import { Pool } from "./pool.js";
+import { Pool, sweepEth } from "./pool.js";
 import { connection } from "./solana/pump.js";
 import { publicClient, launchPreflight, PONS } from "./evm/pons.js";
 import { fx } from "./fx.js";
@@ -372,6 +372,42 @@ async function main() {
     for (const c of coins.values()) makers.resume(c.id);
     return { ok: true, paused: scheduler.paused };
   }, { admin: true });
+  /**
+   * Consolidate every per-coin EVM wallet into the pool wallet. Dry run by default: POST {"confirm":true} moves ETH.
+   * A live coin's maker and launcher are skipped unless {"includeLive":true} — sweeping them leaves the maker without gas.
+   */
+  router.post("/api/admin/pool/sweep-eth", async (_p, body) => {
+    const b = (body ?? {}) as { confirm?: unknown; includeLive?: unknown };
+    const confirm = b.confirm === true;
+    const includeLive = b.includeLive === true;
+    const rows: { id: string; wallet: string; address: string; eth: number; tx?: string; skipped?: string; error?: string }[] = [];
+    for (const r of registry.list()) {
+      const live = r.status === "live" || r.status === "launching";
+      const keys = registry.keys(r.id);
+      const wallets: [string, string | undefined, string][] = [
+        ["evmMaker", keys.evmMaker, r.wallets.evmMaker],
+        ["evmLauncher", keys.evmLauncher, r.wallets.evmLauncher],
+        ["evmPayment", keys.evmPayment, r.wallets.evmPayment],
+      ];
+      for (const [wallet, key, address] of wallets) {
+        if (!key || !address) continue;
+        const eth = Number(formatEther(await pub.getBalance({ address: address as `0x${string}` })));
+        if (eth === 0) continue;
+        if (live && includeLive === false && wallet !== "evmPayment") { rows.push({ id: r.id, wallet, address, eth, skipped: "coin is live" }); continue; }
+        if (!confirm) { rows.push({ id: r.id, wallet, address, eth, skipped: "dry run" }); continue; }
+        try {
+          const done = await sweepEth(pub, config.evm.rpcUrl, key, pool.evmAddress);
+          rows.push({ id: r.id, wallet, address, eth: done?.eth ?? 0, tx: done?.sig });
+        } catch (e) {
+          rows.push({ id: r.id, wallet, address, eth, error: (e as Error).message });
+        }
+      }
+    }
+    const balances = await pool.balances();
+    const moved = rows.filter((x) => x.tx).reduce((a, x) => a + x.eth, 0);
+    return { confirm, includeLive, wallets: rows, moved, pool: { address: pool.evmAddress, eth: balances.eth } };
+  }, { admin: true });
+
   router.get("/api/admin/pool/status", () => ({
     paused: scheduler.paused, closed: scheduler.closed, closing: [...closing],
     coins: [...coins.values()].map((c) => ({ id: c.id, lossUsd: c.maker.lossUsd, mode: c.maker.mode, front: c.front, repaid: c.repaid, retiredAt: c.retiredAt })),
